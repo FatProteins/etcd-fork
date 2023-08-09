@@ -25,6 +25,7 @@ import (
 	"os"
 
 	"go.etcd.io/etcd/server/v3/etcdmain"
+	_ "net/http/pprof"
 )
 
 func main() {

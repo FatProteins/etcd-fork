@@ -16,7 +16,13 @@ package rafthttp
 
 import (
 	"context"
+	"fmt"
+	"go.etcd.io/etcd/server/v3/daproto"
+	"google.golang.org/protobuf/proto"
+	"log"
+	"net"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -172,8 +178,116 @@ func (t *Transport) Get(id types.ID) Peer {
 	return t.peers[id]
 }
 
+var logger *log.Logger
+var errLogger *log.Logger
+var unixConn *net.UnixConn
+
+func init() {
+	logger = log.New(os.Stdout, "[THESIS]", log.Ldate|log.Ltime|log.LUTC)
+	errLogger = log.New(os.Stderr, "[ERR-THESIS]", log.Ldate|log.Ltime|log.LUTC)
+	daSocketPath, exists := os.LookupEnv("DA_CONTAINER_SOCKET_PATH")
+	if !exists {
+		panic("DA Socket path env variable is not defined")
+	}
+
+	unixAddr, err := net.ResolveUnixAddr("unixgram", daSocketPath)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to resolve unix addr to DA socket: '%s'", err.Error()))
+	}
+
+	logger.Printf("Dialing DA unix domain socket on path '%s'\n", unixAddr.String())
+
+	unixConn, err = net.DialUnix("unixgram", nil, unixAddr)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to dial DA unix socket: '%s'", err.Error()))
+	}
+
+	logger.Printf("Connection to DA established on path '%s'!\n", unixAddr.String())
+
+	//go func() {
+	//	for {
+	//		bytes := make([]byte, 10*4096)
+	//		bytesRead, _, err := unixConn.ReadFromUnix(bytes)
+	//		if err != nil {
+	//			logger.Printf("Failed to read message")
+	//			continue
+	//		}
+	//
+	//		bytes = bytes[:bytesRead]
+	//		msg := daproto.Message{}
+	//		err = proto.Unmarshal(bytes, &msg)
+	//		if err != nil {
+	//			logger.Printf("Failed to unmarshal msg of length %d", bytesRead)
+	//			continue
+	//		}
+	//
+	//		logger.Printf("Received message: ")
+	//	}
+	//}()
+}
+
+const (
+	HEARTBEAT             = "HEARTBEAT"
+	VOTE_REQUEST_RECEIVED = "VOTE_REQUEST_RECEIVED"
+	VOTE_RECEIVED         = "VOTE_RECEIVED"
+	LOG_ENTRY_REPLICATED  = "LOG_ENTRY_REPLICATED"
+	LOG_ENTRY_COMMITTED   = "LOG_ENTRY_COMMITTED"
+	LEADER_SUSPECTED      = "LEADER_SUSPECTED"
+	FOLLOWER_SUSPECTED    = "FOLLOWER_SUSPECTED"
+)
+
+var daInterruptLock = sync.Mutex{}
+
+func daInterrupt(message raftpb.Message) {
+	daInterruptLock.Lock()
+	defer daInterruptLock.Unlock()
+	daMsg := daproto.Message{}
+	daMsg.MessageType = mapMsgType(message.Type)
+	logger.Printf("Received interrupt for msg of type '%s'\n", daMsg.MessageType)
+	daMsgBytes, err := proto.Marshal(&daMsg)
+	if err != nil {
+		errLogger.Printf("Failed to marshal msg of type '%s': %s\n", daMsg.MessageType, err.Error())
+		return
+	}
+
+	_, err = unixConn.Write(daMsgBytes)
+	if err != nil {
+		errLogger.Printf("Failed to write msg to DA socket: %s\n", err.Error())
+		return
+	}
+
+	logger.Printf("Sent msg of type '%s'", daMsg.MessageType)
+
+	respBytes := make([]byte, 10*4096)
+	bytesRead, err := unixConn.Read(respBytes)
+	if err != nil {
+		logger.Printf("Failed to read response from DA: %s\n", err.Error())
+		return
+	}
+
+	respBytes = respBytes[:bytesRead]
+	daResp := daproto.Message{}
+	err = proto.Unmarshal(respBytes, &daResp)
+	if err != nil {
+		logger.Printf("Failed to unmarshal response from DA to protobuf msg: %s\n", err.Error())
+		return
+	}
+
+	logger.Printf("Successfully received response from DA: %s\n", daResp.String())
+}
+
+func mapMsgType(msgType raftpb.MessageType) string {
+	switch msgType {
+	case raftpb.MsgHeartbeat, raftpb.MsgHeartbeatResp:
+		return HEARTBEAT
+	default:
+		return LOG_ENTRY_COMMITTED
+	}
+}
+
 func (t *Transport) Send(msgs []raftpb.Message) {
 	for _, m := range msgs {
+		daInterrupt(m)
 		if m.To == 0 {
 			// ignore intentionally dropped message
 			continue

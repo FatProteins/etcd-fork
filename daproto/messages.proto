@@ -1,0 +1,49 @@
+syntax = "proto3";
+
+option go_package = "./daproto";
+
+import "google/protobuf/any.proto";
+
+message Message {
+  string messageType = 1;
+  google.protobuf.Any messageObject = 2;
+  optional CustomData customData = 3;
+}
+
+message CustomData {
+  string protocolName = 1;
+  google.protobuf.Any data = 2;
+}
+
+message VoteRequestReceived {
+  uint32 requestingNodeId = 1;
+  uint32 receivingNodeId = 2;
+}
+
+message VoteReceived {
+  uint32 votingNodeId = 1;
+  uint32 votedNodeId = 2;
+  bool voteGranted = 3;
+}
+
+message LogEntryReplicated {
+  uint32 leaderId = 1;
+  uint32 receivingNodeId = 2;
+  int64 logEntryNumber = 3;
+}
+
+message LogEntryCommitted {
+  uint32 leaderId = 1;
+  uint32 receivingNodeId = 2;
+  int64 logEntryNumber = 3;
+}
+
+message LeaderSuspected {
+  uint32 leaderId = 1;
+  uint32 suspectingNodeId = 2;
+}
+
+message FollowerSuspected {
+  uint32 leaderId = 1;
+  uint32 followerId = 2;
+}
