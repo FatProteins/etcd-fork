@@ -17,6 +17,7 @@ package rafthttp
 import (
 	"context"
 	"fmt"
+	"go.etcd.io/etcd/pkg/v3/osutil"
 	"go.etcd.io/etcd/server/v3/daproto"
 	"go.etcd.io/raft/v3"
 	"google.golang.org/protobuf/proto"
@@ -24,6 +25,7 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.etcd.io/etcd/client/pkg/v3/transport"
@@ -183,15 +185,18 @@ var DaLogger *Logger
 var sendConn *net.UnixConn
 var recvConn *net.UnixConn
 var respBytes []byte
-var actionPicker *ActionPicker
+var DaActionPicker = atomic.Pointer[ActionPicker]{}
 
 const daEnabled = false
 
 func init() {
 	DaLogger = NewLogger("[THESIS]")
 	if !daEnabled {
+		DaLogger.Info("DETECTION DISABLED")
 		return
 	}
+
+	DaLogger.Info("DETECTION ENABLED")
 	toDaSocketPath, exists := os.LookupEnv("TO_DA_CONTAINER_SOCKET_PATH")
 	if !exists {
 		panic("To-DA Socket path env variable is not defined")
@@ -234,8 +239,14 @@ func init() {
 		panic(fmt.Sprintf("Failed to read fault config from path '%s': '%s'", configPath, err.Error()))
 	}
 
-	actionPicker = NewActionPicker(faultConfig)
-	DaLogger.Info("INTERRUPT IS DISABLED!")
+	DaActionPicker.Store(NewActionPicker(faultConfig))
+
+	httpServer := RunConfigApi()
+	osutil.RegisterInterruptHandler(func() {
+		httpCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = httpServer.Shutdown(httpCtx)
+	})
 
 	//go func() {
 	//	for {
@@ -259,18 +270,57 @@ func init() {
 	//}()
 }
 
-var daInterruptLock = sync.Mutex{}
+var daInterruptLock = sync.RWMutex{}
+var daDataLock = sync.Mutex{}
+var lastIndex uint64 = 0
+var lastTerm uint64 = 0
+var lastLogTerm uint64 = 0
 
-func pickAction(message raftpb.Message) {
-	action := actionPicker.DetermineAction()
-	if action.Type() != daproto.ActionType_NOOP_ACTION_TYPE {
-		daInterrupt(message, action.Type())
+func pickAction(message *raftpb.Message) {
+	if !daEnabled {
+		return
+	}
+	if message.Type == raftpb.MsgHeartbeat || message.Type == raftpb.MsgHeartbeatResp {
+		return
+	}
+
+	action := DaActionPicker.Load().DetermineAction()
+	actionType := action.Type()
+	if actionType == daproto.ActionType_NOOP_ACTION_TYPE {
+		daDataLock.Lock()
+		lastIndex = message.Index
+		lastTerm = message.Term
+		lastLogTerm = message.LogTerm
+		defer daDataLock.Unlock()
+		return
+	} else if actionType == daproto.ActionType_RESEND_LAST_MESSAGE_ACTION_TYPE {
+		tempIdx := message.Index
+		tempTerm := message.Term
+		tempLogTerm := message.LogTerm
+		daDataLock.Lock()
+		message.Index = lastIndex
+		message.Term = lastTerm
+		message.LogTerm = lastLogTerm
+		lastIndex = tempIdx
+		lastTerm = tempTerm
+		lastLogTerm = tempLogTerm
+		defer daDataLock.Unlock()
+	} else {
+		daDataLock.Lock()
+		lastIndex = message.Index
+		lastTerm = message.Term
+		lastLogTerm = message.LogTerm
+		daDataLock.Unlock()
+		daInterruptLock.RUnlock()
+		daInterrupt(message, actionType)
+		daInterruptLock.RLock()
 	}
 }
 
-func daInterrupt(message raftpb.Message, actionType daproto.ActionType) {
+func daInterrupt(message *raftpb.Message, actionType daproto.ActionType) {
 	daInterruptLock.Lock()
 	defer daInterruptLock.Unlock()
+
 	daMsg := daproto.Message{MessageType: mapMsgType(message.Type), ActionType: actionType}
 	//DaLogger.Printf("Received interrupt for msg of type '%s'\n", daMsg.MessageType)
 	daMsgBytes, err := proto.Marshal(&daMsg)
@@ -314,9 +364,11 @@ func mapMsgType(msgType raftpb.MessageType) daproto.MessageType {
 }
 
 func (t *Transport) Send(msgs []raftpb.Message) {
+	daInterruptLock.RLock()
+	defer daInterruptLock.RUnlock()
 	for _, m := range msgs {
 		//daInterrupt(m)
-		//pickAction(m)
+		pickAction(&m)
 		if m.To == 0 {
 			// ignore intentionally dropped message
 			continue

@@ -113,6 +113,7 @@ func (config *FaultConfig) String() (string, error) {
 type ActionPicker struct {
 	cumProbabilities []float64
 	actions          map[daproto.ActionType]FaultAction
+	faultConfig      FaultConfig
 }
 
 func NewActionPicker(config FaultConfig) *ActionPicker {
@@ -137,7 +138,7 @@ func NewActionPicker(config FaultConfig) *ActionPicker {
 		daproto.ActionType_STOP_ACTION_TYPE:                &StopAction{config, stopCmd, stopArgs, restartCmd, restartArgs},
 		daproto.ActionType_RESEND_LAST_MESSAGE_ACTION_TYPE: &ResendLastMessageAction{},
 	}
-	return &ActionPicker{cumProbabilities: cumSum, actions: actions}
+	return &ActionPicker{cumProbabilities: cumSum, actions: actions, faultConfig: config}
 }
 
 func (actionPicker *ActionPicker) DetermineAction() FaultAction {

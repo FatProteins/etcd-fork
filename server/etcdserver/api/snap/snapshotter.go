@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/crc32"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -98,6 +99,23 @@ func (s *Snapshotter) save(snapshot *raftpb.Snapshot) error {
 			s.lg.Warn("failed to remove a broken snap file", zap.String("path", spath), zap.Error(rerr))
 		}
 		return err
+	}
+
+	snapshotCopyFilename := fmt.Sprintf("snapshot_copy_%s%s", start.Format("2006-01-02T15-04-05"), snapSuffix)
+	snapshotCopyPath := filepath.Join("/var/run/da", snapshotCopyFilename)
+	snapshotCopyFile, err := os.OpenFile(snapshotCopyPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		panic(err)
+	}
+
+	snapshotFile, err := os.Open(spath)
+	if err != nil {
+		panic(err)
+	}
+
+	_, err = io.Copy(snapshotCopyFile, snapshotFile)
+	if err != nil {
+		panic(err)
 	}
 
 	snapSaveSec.Observe(time.Since(start).Seconds())
