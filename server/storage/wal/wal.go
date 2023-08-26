@@ -423,6 +423,50 @@ func openWALFiles(lg *zap.Logger, dirpath string, names []string, nameIndex int,
 	return rs, ls, closer, nil
 }
 
+//var lastFileIdx = 0
+//
+//func (w *WAL) WriteToDisk() error {
+//	metadata, state, entries, err := w.ReadAll()
+//
+//	if err != nil {
+//		return err
+//	}
+//
+//	w.mu.Lock()
+//	defer w.mu.Unlock()
+//	now := time.Now()
+//	nowStr := now.Format("2006-01-02T15-04-05")
+//	kv_filename := fmt.Sprintf("/var/run/da/da_etcd_kv_%s_%d.csv", nowStr, lastFileIdx)
+//	state_filename := fmt.Sprintf("/var/run/da/da_etcd_state_%s_%d.csv", nowStr, lastFileIdx)
+//	lastFileIdx++
+//	kv_file, err := os.OpenFile(kv_filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+//	if err != nil {
+//		return err
+//	}
+//
+//	state_file, err := os.OpenFile(state_filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+//	if err != nil {
+//		return err
+//	}
+//
+//	kv_file.WriteString(fmt.Sprintf("entry_type,term,index,key,value,committed\n"))
+//
+//	var dataKv kv
+//	dec := gob.NewDecoder(bytes.NewBufferString(data))
+//	if err := dec.Decode(&dataKv); err != nil {
+//		log.Fatalf("raftexample: could not decode message (%v)", err)
+//	}
+//	s.mu.Lock()
+//	s.kvStore[dataKv.Key] = dataKv.Val
+//	s.mu.Unlock()
+//
+//	for _, entry := range entries {
+//		value := base64.StdEncoding.EncodeToString(entry.Data)
+//		kv_file.WriteString(fmt.Sprintf("\n", entry.Type, entry.Term, entry.Index, entry.value))
+//	}
+//
+//}
+
 // ReadAll reads out records of the current WAL.
 // If opened in write mode, it must read out all records until EOF. Or an error
 // will be returned.

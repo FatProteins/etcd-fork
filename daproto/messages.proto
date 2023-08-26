@@ -4,11 +4,32 @@ option go_package = "./daproto";
 
 import "google/protobuf/any.proto";
 
-message Message {
-  string messageType = 1;
-  google.protobuf.Any messageObject = 2;
-  optional CustomData customData = 3;
+enum MessageType {
+  DA_RESPONSE = 0;
+  HEARTBEAT = 1;
+  VOTE_REQUEST_RECEIVED = 2;
+  VOTE_RECEIVED = 3;
+  LOG_ENTRY_REPLICATED = 4;
+  LOG_ENTRY_COMMITTED = 5;
+  LEADER_SUSPECTED = 6;
+  FOLLOWER_SUSPECTED = 7;
 }
+
+enum ActionType {
+    NOOP_ACTION_TYPE = 0;
+    HALT_ACTION_TYPE = 1;
+    PAUSE_ACTION_TYPE = 2;
+    STOP_ACTION_TYPE = 3;
+    RESEND_LAST_MESSAGE_ACTION_TYPE = 4;
+}
+
+message Message {
+  MessageType messageType = 1;
+  ActionType actionType = 2;
+  google.protobuf.Any messageObject = 3;
+  optional CustomData customData = 4;
+}
+
 
 message CustomData {
   string protocolName = 1;

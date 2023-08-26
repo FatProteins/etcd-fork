@@ -19,6 +19,7 @@ package report
 import (
 	"fmt"
 	"math"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -183,9 +184,18 @@ func (r *report) processResult(res *Result) {
 }
 
 func (r *report) processResults() {
+	reportFileName := fmt.Sprintf("benchmark-report_%s.csv", time.Now().Format("2006-01-02T15-04-05"))
+	reportFile, err := os.OpenFile(reportFileName, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0755)
+	if err != nil {
+		panic("failed to create report file: " + err.Error())
+	}
+
+	defer reportFile.Close()
+
 	st := time.Now()
 	for res := range r.results {
 		r.processResult(&res)
+		_, _ = reportFile.WriteString(fmt.Sprintf("%d,%d,%t\n", res.Start.UnixNano(), res.End.UnixNano(), res.Err != nil))
 	}
 	r.stats.Total = time.Since(st)
 

@@ -18,8 +18,8 @@ import (
 	"context"
 	"fmt"
 	"go.etcd.io/etcd/server/v3/daproto"
+	"go.etcd.io/raft/v3"
 	"google.golang.org/protobuf/proto"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -30,7 +30,6 @@ import (
 	"go.etcd.io/etcd/client/pkg/v3/types"
 	"go.etcd.io/etcd/server/v3/etcdserver/api/snap"
 	stats "go.etcd.io/etcd/server/v3/etcdserver/api/v2stats"
-	"go.etcd.io/raft/v3"
 	"go.etcd.io/raft/v3/raftpb"
 
 	"github.com/xiang90/probing"
@@ -178,38 +177,72 @@ func (t *Transport) Get(id types.ID) Peer {
 	return t.peers[id]
 }
 
-var logger *log.Logger
-var errLogger *log.Logger
-var unixConn *net.UnixConn
+const configPath = "/thesis/config/fault-config.yml"
+
+var DaLogger *Logger
+var sendConn *net.UnixConn
+var recvConn *net.UnixConn
+var respBytes []byte
+var actionPicker *ActionPicker
+
+const daEnabled = false
 
 func init() {
-	logger = log.New(os.Stdout, "[THESIS]", log.Ldate|log.Ltime|log.LUTC)
-	errLogger = log.New(os.Stderr, "[ERR-THESIS]", log.Ldate|log.Ltime|log.LUTC)
-	daSocketPath, exists := os.LookupEnv("DA_CONTAINER_SOCKET_PATH")
+	DaLogger = NewLogger("[THESIS]")
+	if !daEnabled {
+		return
+	}
+	toDaSocketPath, exists := os.LookupEnv("TO_DA_CONTAINER_SOCKET_PATH")
 	if !exists {
-		panic("DA Socket path env variable is not defined")
+		panic("To-DA Socket path env variable is not defined")
 	}
 
-	unixAddr, err := net.ResolveUnixAddr("unixgram", daSocketPath)
+	//fromDaSocketPath, exists := os.LookupEnv("FROM_DA_CONTAINER_SOCKET_PATH")
+	//if !exists {
+	//	panic("From-DA Socket path env variable is not defined")
+	//}
+
+	toDaUnixAddr, err := net.ResolveUnixAddr("unix", toDaSocketPath)
 	if err != nil {
-		panic(fmt.Sprintf("Failed to resolve unix addr to DA socket: '%s'", err.Error()))
+		panic(fmt.Sprintf("Failed to resolve unix addr To-DA socket: '%s'", err.Error()))
 	}
 
-	logger.Printf("Dialing DA unix domain socket on path '%s'\n", unixAddr.String())
+	//fromDaUnixAddr, err := net.ResolveUnixAddr("unixgram", fromDaSocketPath)
+	//if err != nil {
+	//	panic(fmt.Sprintf("Failed to resolve unix addr From-DA socket: '%s'", err.Error()))
+	//}
 
-	unixConn, err = net.DialUnix("unixgram", nil, unixAddr)
+	DaLogger.Info("Dialing DA unix domain socket on path '%s'", toDaUnixAddr.String())
+
+	sendConn, err = net.DialUnix("unix", nil, toDaUnixAddr)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to dial DA unix socket: '%s'", err.Error()))
 	}
 
-	logger.Printf("Connection to DA established on path '%s'!\n", unixAddr.String())
+	//recvConn, err = net.DialUnix("unixgram", nil, fromDaUnixAddr)
+	//if err != nil {
+	//	panic(fmt.Sprintf("Failed to resolve unix addr From-DA socket: '%s'", err.Error()))
+	//}
+
+	DaLogger.Info("Connection To-DA established on path '%s'!", toDaUnixAddr.String())
+	//DaLogger.Printf("Connection From-DA established on path '%s'!\n", fromDaUnixAddr.String())
+
+	respBytes = make([]byte, 10*4096)
+
+	faultConfig, err := ReadFaultConfig(configPath)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to read fault config from path '%s': '%s'", configPath, err.Error()))
+	}
+
+	actionPicker = NewActionPicker(faultConfig)
+	DaLogger.Info("INTERRUPT IS DISABLED!")
 
 	//go func() {
 	//	for {
 	//		bytes := make([]byte, 10*4096)
-	//		bytesRead, _, err := unixConn.ReadFromUnix(bytes)
+	//		bytesRead, _, err := sendConn.ReadFromUnix(bytes)
 	//		if err != nil {
-	//			logger.Printf("Failed to read message")
+	//			DaLogger.Printf("Failed to read message")
 	//			continue
 	//		}
 	//
@@ -217,51 +250,46 @@ func init() {
 	//		msg := daproto.Message{}
 	//		err = proto.Unmarshal(bytes, &msg)
 	//		if err != nil {
-	//			logger.Printf("Failed to unmarshal msg of length %d", bytesRead)
+	//			DaLogger.Printf("Failed to unmarshal msg of length %d", bytesRead)
 	//			continue
 	//		}
 	//
-	//		logger.Printf("Received message: ")
+	//		DaLogger.Printf("Received message: ")
 	//	}
 	//}()
 }
 
-const (
-	HEARTBEAT             = "HEARTBEAT"
-	VOTE_REQUEST_RECEIVED = "VOTE_REQUEST_RECEIVED"
-	VOTE_RECEIVED         = "VOTE_RECEIVED"
-	LOG_ENTRY_REPLICATED  = "LOG_ENTRY_REPLICATED"
-	LOG_ENTRY_COMMITTED   = "LOG_ENTRY_COMMITTED"
-	LEADER_SUSPECTED      = "LEADER_SUSPECTED"
-	FOLLOWER_SUSPECTED    = "FOLLOWER_SUSPECTED"
-)
-
 var daInterruptLock = sync.Mutex{}
 
-func daInterrupt(message raftpb.Message) {
+func pickAction(message raftpb.Message) {
+	action := actionPicker.DetermineAction()
+	if action.Type() != daproto.ActionType_NOOP_ACTION_TYPE {
+		daInterrupt(message, action.Type())
+	}
+}
+
+func daInterrupt(message raftpb.Message, actionType daproto.ActionType) {
 	daInterruptLock.Lock()
 	defer daInterruptLock.Unlock()
-	daMsg := daproto.Message{}
-	daMsg.MessageType = mapMsgType(message.Type)
-	logger.Printf("Received interrupt for msg of type '%s'\n", daMsg.MessageType)
+	daMsg := daproto.Message{MessageType: mapMsgType(message.Type), ActionType: actionType}
+	//DaLogger.Printf("Received interrupt for msg of type '%s'\n", daMsg.MessageType)
 	daMsgBytes, err := proto.Marshal(&daMsg)
 	if err != nil {
-		errLogger.Printf("Failed to marshal msg of type '%s': %s\n", daMsg.MessageType, err.Error())
+		DaLogger.ErrorErr(err, "Failed to marshal msg of type '%s'", daMsg.MessageType)
 		return
 	}
 
-	_, err = unixConn.Write(daMsgBytes)
+	_, err = sendConn.Write(daMsgBytes)
 	if err != nil {
-		errLogger.Printf("Failed to write msg to DA socket: %s\n", err.Error())
+		DaLogger.ErrorErr(err, "Failed to write msg to DA socket")
 		return
 	}
 
-	logger.Printf("Sent msg of type '%s'", daMsg.MessageType)
+	//DaLogger.Printf("Sent msg of type '%s'", daMsg.MessageType)
 
-	respBytes := make([]byte, 10*4096)
-	bytesRead, err := unixConn.Read(respBytes)
+	bytesRead, err := sendConn.Read(respBytes)
 	if err != nil {
-		logger.Printf("Failed to read response from DA: %s\n", err.Error())
+		DaLogger.ErrorErr(err, "Failed to read response from DA")
 		return
 	}
 
@@ -269,25 +297,26 @@ func daInterrupt(message raftpb.Message) {
 	daResp := daproto.Message{}
 	err = proto.Unmarshal(respBytes, &daResp)
 	if err != nil {
-		logger.Printf("Failed to unmarshal response from DA to protobuf msg: %s\n", err.Error())
+		DaLogger.ErrorErr(err, "Failed to unmarshal response from DA to protobuf msg")
 		return
 	}
 
-	logger.Printf("Successfully received response from DA: %s\n", daResp.String())
+	//DaLogger.Printf("Successfully received response from DA: %s\n", daResp.String())
 }
 
-func mapMsgType(msgType raftpb.MessageType) string {
+func mapMsgType(msgType raftpb.MessageType) daproto.MessageType {
 	switch msgType {
 	case raftpb.MsgHeartbeat, raftpb.MsgHeartbeatResp:
-		return HEARTBEAT
+		return daproto.MessageType_HEARTBEAT
 	default:
-		return LOG_ENTRY_COMMITTED
+		return daproto.MessageType_LOG_ENTRY_COMMITTED
 	}
 }
 
 func (t *Transport) Send(msgs []raftpb.Message) {
 	for _, m := range msgs {
-		daInterrupt(m)
+		//daInterrupt(m)
+		//pickAction(m)
 		if m.To == 0 {
 			// ignore intentionally dropped message
 			continue

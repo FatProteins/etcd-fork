@@ -19,6 +19,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/binary"
+	"go.etcd.io/etcd/server/v3/etcdserver/api/rafthttp"
 	"strconv"
 	"time"
 
@@ -141,6 +142,7 @@ func (s *EtcdServer) Range(ctx context.Context, r *pb.RangeRequest) (*pb.RangeRe
 
 func (s *EtcdServer) Put(ctx context.Context, r *pb.PutRequest) (*pb.PutResponse, error) {
 	ctx = context.WithValue(ctx, traceutil.StartTimeKey, time.Now())
+	rafthttp.DaLogger.Info("Got Put request etcdserver with key %s", string(r.Key))
 	resp, err := s.raftRequest(ctx, pb.InternalRaftRequest{Put: r})
 	if err != nil {
 		return nil, err

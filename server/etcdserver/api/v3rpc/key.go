@@ -17,6 +17,8 @@ package v3rpc
 
 import (
 	"context"
+	"go.etcd.io/etcd/server/v3/etcdserver/api/rafthttp"
+	"reflect"
 
 	pb "go.etcd.io/etcd/api/v3/etcdserverpb"
 	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
@@ -56,7 +58,8 @@ func (s *kvServer) Put(ctx context.Context, r *pb.PutRequest) (*pb.PutResponse, 
 	if err := checkPutRequest(r); err != nil {
 		return nil, err
 	}
-
+	rafthttp.DaLogger.Info("Got Put request with key %s", string(r.Key))
+	rafthttp.DaLogger.Info("kv type %s", reflect.TypeOf(s.kv))
 	resp, err := s.kv.Put(ctx, r)
 	if err != nil {
 		return nil, togRPCError(err)
