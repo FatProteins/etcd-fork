@@ -187,7 +187,7 @@ var recvConn *net.UnixConn
 var respBytes []byte
 var DaActionPicker = atomic.Pointer[ActionPicker]{}
 
-const daEnabled = false
+const daEnabled = true
 
 func init() {
 	DaLogger = NewLogger("[THESIS]")

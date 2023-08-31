@@ -1,12 +1,13 @@
 package rafthttp
 
 import (
+	crand "crypto/rand"
 	"errors"
 	"go.etcd.io/etcd/server/v3/daproto"
 	"gonum.org/v1/gonum/floats"
-	"gonum.org/v1/gonum/stat/distuv"
 	"google.golang.org/protobuf/types/known/anypb"
 	"gopkg.in/yaml.v3"
+	"math/big"
 	"os"
 	"os/exec"
 	"sort"
@@ -141,8 +142,18 @@ func NewActionPicker(config FaultConfig) *ActionPicker {
 	return &ActionPicker{cumProbabilities: cumSum, actions: actions, faultConfig: config}
 }
 
+var randLimitInt int64 = 1000000
+var randLimit = big.NewInt(randLimitInt + 1)
+
 func (actionPicker *ActionPicker) DetermineAction() FaultAction {
-	val := distuv.UnitUniform.Rand() * actionPicker.cumProbabilities[len(actionPicker.cumProbabilities)-1]
+	result, err := crand.Int(crand.Reader, randLimit)
+	if err != nil {
+		panic(err)
+	}
+
+	//randomValue := distuv.UnitUniform.Rand()
+	randomValue := float64(result.Int64()) / float64(randLimitInt)
+	val := randomValue * actionPicker.cumProbabilities[len(actionPicker.cumProbabilities)-1]
 	actionIdx := sort.Search(len(actionPicker.cumProbabilities), func(i int) bool { return actionPicker.cumProbabilities[i] > val })
 	action := actionPicker.actions[daproto.ActionType(actionIdx)]
 	DaLogger.Debug("Picking action '%s'", action.Name())
