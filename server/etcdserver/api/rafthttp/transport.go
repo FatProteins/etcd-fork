@@ -187,10 +187,13 @@ var recvConn *net.UnixConn
 var respBytes []byte
 var DaActionPicker = atomic.Pointer[ActionPicker]{}
 
-const daEnabled = true
+var daEnabled bool
 
 func init() {
 	DaLogger = NewLogger("[THESIS]")
+
+	var disableDa = os.Getenv("DA_DISABLE_INTERRUPT")
+	daEnabled = disableDa != "1"
 	if !daEnabled {
 		DaLogger.Info("DETECTION DISABLED")
 		return
