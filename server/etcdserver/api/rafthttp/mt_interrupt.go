@@ -113,6 +113,10 @@ var daDataLock = sync.Mutex{}
 var lastIndex uint64 = 0
 var lastTerm uint64 = 0
 var lastLogTerm uint64 = 0
+var forceActionType = true
+var forcedActionType = daproto.ActionType_RESEND_LAST_MESSAGE_ACTION_TYPE
+var forcedMessageCount = 1000
+var appendMessageCount = 0
 
 func pickAction(message *raftpb.Message) {
 	if !daEnabled {
@@ -122,23 +126,36 @@ func pickAction(message *raftpb.Message) {
 		return
 	}
 
+	if message.Type == raftpb.MsgApp {
+		appendMessageCount++
+	}
+
 	action := DaActionPicker.Load().DetermineAction()
 	actionType := action.Type()
-	if actionType == daproto.ActionType_NOOP_ACTION_TYPE {
+	if forceActionType {
+		actionType = forcedActionType
+	}
+
+	if (actionType == daproto.ActionType_NOOP_ACTION_TYPE) && (appendMessageCount%forcedMessageCount == 0 || !forceActionType) && message.Type == raftpb.MsgApp {
 		daDataLock.Lock()
 		defer daDataLock.Unlock()
 		lastIndex = message.Index
 		lastTerm = message.Term
 		lastLogTerm = message.LogTerm
-	} else if actionType == daproto.ActionType_RESEND_LAST_MESSAGE_ACTION_TYPE {
+	} else if (actionType == daproto.ActionType_RESEND_LAST_MESSAGE_ACTION_TYPE) && (appendMessageCount%forcedMessageCount == 0 || !forceActionType) && message.Type == raftpb.MsgApp {
 		tempIdx := message.Index
 		tempTerm := message.Term
 		tempLogTerm := message.LogTerm
 		daDataLock.Lock()
 		defer daDataLock.Unlock()
-		message.Index = lastIndex
-		message.Term = lastTerm
-		message.LogTerm = lastLogTerm
+		message.Index = message.Index - 10
+		message.Term = message.Term + 1
+		for i := 0; i < len(message.Entries); i++ {
+			message.Entries[i].Index = uint64(i)
+			message.Entries[i].Term = message.Term
+		}
+		//message.Term = lastTerm
+		//message.LogTerm = lastLogTerm
 		lastIndex = tempIdx
 		lastTerm = tempTerm
 		lastLogTerm = tempLogTerm
