@@ -2,7 +2,7 @@ package rafthttp
 
 import (
 	"context"
-	"fmt"
+	"go.etcd.io/etcd/api/v3/etcdserverpb"
 	"go.etcd.io/etcd/pkg/v3/osutil"
 	"go.etcd.io/etcd/server/v3/daproto"
 	"go.etcd.io/raft/v3/raftpb"
@@ -37,7 +37,7 @@ func init() {
 	DaLogger.Info("DETECTION ENABLED")
 	toDaSocketPath, exists := os.LookupEnv("TO_DA_CONTAINER_SOCKET_PATH")
 	if !exists {
-		panic("To-DA Socket path env variable is not defined")
+		//panic("To-DA Socket path env variable is not defined")
 	}
 
 	//fromDaSocketPath, exists := os.LookupEnv("FROM_DA_CONTAINER_SOCKET_PATH")
@@ -47,7 +47,7 @@ func init() {
 
 	toDaUnixAddr, err := net.ResolveUnixAddr("unix", toDaSocketPath)
 	if err != nil {
-		panic(fmt.Sprintf("Failed to resolve unix addr To-DA socket: '%s'", err.Error()))
+		//panic(fmt.Sprintf("Failed to resolve unix addr To-DA socket: '%s'", err.Error()))
 	}
 
 	//fromDaUnixAddr, err := net.ResolveUnixAddr("unixgram", fromDaSocketPath)
@@ -59,7 +59,7 @@ func init() {
 
 	sendConn, err = net.DialUnix("unix", nil, toDaUnixAddr)
 	if err != nil {
-		panic(fmt.Sprintf("Failed to dial DA unix socket: '%s'", err.Error()))
+		//panic(fmt.Sprintf("Failed to dial DA unix socket: '%s'", err.Error()))
 	}
 
 	//recvConn, err = net.DialUnix("unixgram", nil, fromDaUnixAddr)
@@ -74,7 +74,7 @@ func init() {
 
 	faultConfig, err := ReadFaultConfig(configPath)
 	if err != nil {
-		panic(fmt.Sprintf("Failed to read fault config from path '%s': '%s'", configPath, err.Error()))
+		//panic(fmt.Sprintf("Failed to read fault config from path '%s': '%s'", configPath, err.Error()))
 	}
 
 	DaActionPicker.Store(NewActionPicker(faultConfig))
@@ -115,10 +115,15 @@ var lastTerm uint64 = 0
 var lastLogTerm uint64 = 0
 var forceActionType = true
 var forcedActionType = daproto.ActionType_RESEND_LAST_MESSAGE_ACTION_TYPE
-var forcedMessageCount = 1000
-var appendMessageCount = 0
+var forcedMessageKey = "10000"
+
+type kv struct {
+	Key string
+	Val string
+}
 
 func pickAction(message *raftpb.Message) {
+	//DaLogger.Info("messageType %s with %d entries", message.Type, len(message.Entries))
 	if !daEnabled {
 		return
 	}
@@ -126,39 +131,92 @@ func pickAction(message *raftpb.Message) {
 		return
 	}
 
-	if message.Type == raftpb.MsgApp {
-		appendMessageCount++
-	}
-
-	action := DaActionPicker.Load().DetermineAction()
-	actionType := action.Type()
+	var actionType daproto.ActionType
 	if forceActionType {
 		actionType = forcedActionType
+	} else {
+		action := DaActionPicker.Load().DetermineAction()
+		actionType = action.Type()
 	}
 
-	if (actionType == daproto.ActionType_NOOP_ACTION_TYPE) && (appendMessageCount%forcedMessageCount == 0 || !forceActionType) && message.Type == raftpb.MsgApp {
+	DaLogger.Debug("Message %s has %d entries", message.Type.String(), len(message.Entries))
+	DaLogger.Debug("Message: %s", message.String())
+	hasForcedMessageKey := false
+	for i := 0; i < len(message.Entries); i++ {
+		kvData := message.Entries[i].Data
+		if kvData == nil {
+			DaLogger.Debug("Entry %d has no data", i)
+			continue
+		}
+
+		req := etcdserverpb.InternalRaftRequest{}
+		err := req.Unmarshal(kvData)
+		if err != nil {
+			DaLogger.ErrorErr(err, "Failed to unmarshal entry")
+			continue
+		}
+
+		DaLogger.Debug("Got req: %s", req.String())
+		if req.Put != nil {
+			putKey := string(req.Put.Key)
+			if putKey == forcedMessageKey {
+				hasForcedMessageKey = true
+			}
+			DaLogger.Debug("Got key: %s", putKey)
+			putValue := string(req.Put.Value)
+			DaLogger.Debug("Got value: %s", putValue)
+		}
+	}
+
+	if (actionType == daproto.ActionType_NOOP_ACTION_TYPE) && (hasForcedMessageKey || !forceActionType) && message.Type == raftpb.MsgApp {
 		daDataLock.Lock()
 		defer daDataLock.Unlock()
 		lastIndex = message.Index
 		lastTerm = message.Term
 		lastLogTerm = message.LogTerm
-	} else if (actionType == daproto.ActionType_RESEND_LAST_MESSAGE_ACTION_TYPE) && (appendMessageCount%forcedMessageCount == 0 || !forceActionType) && message.Type == raftpb.MsgApp {
+	} else if (actionType == daproto.ActionType_RESEND_LAST_MESSAGE_ACTION_TYPE) && (hasForcedMessageKey || !forceActionType) && message.Type == raftpb.MsgApp {
 		tempIdx := message.Index
 		tempTerm := message.Term
 		tempLogTerm := message.LogTerm
 		daDataLock.Lock()
 		defer daDataLock.Unlock()
-		message.Index = message.Index - 10
-		message.Term = message.Term + 1
+		message.Index = message.Index - 2
+		//message.Term = message.Term + 1
+		DaLogger.Info("Message %s has %d entries", message.Type.String(), len(message.Entries))
+		DaLogger.Info("Message: %s", message.String())
 		for i := 0; i < len(message.Entries); i++ {
-			message.Entries[i].Index = uint64(i)
-			message.Entries[i].Term = message.Term
+			kvData := message.Entries[i].Data
+			if kvData == nil {
+				DaLogger.Info("Entry %d has no data", i)
+				continue
+			}
+			req := etcdserverpb.InternalRaftRequest{}
+			err := req.Unmarshal(kvData)
+			if err != nil {
+				DaLogger.ErrorErr(err, "Failed to unmarshal entry")
+				continue
+			}
+
+			DaLogger.Debug("Got req: %s", req.String())
+			if req.Put != nil {
+				putKey := string(req.Put.Key)
+				DaLogger.Info("Got key: %s", putKey)
+				putValue := string(req.Put.Value)
+				DaLogger.Info("Got value: %s", putValue)
+			}
+
+			DaLogger.Info("Old #%d entry %s", i, message.Entries[i].String())
+			message.Entries[i].Index = message.Index + uint64(i) + 1
+			DaLogger.Info("Tampered #%d entry %s", i, message.Entries[i].String())
+			//message.Entries[i].Index = message.Entries[i].Index - 1
+			//message.Entries[i].Term = message.Term
 		}
 		//message.Term = lastTerm
 		//message.LogTerm = lastLogTerm
 		lastIndex = tempIdx
 		lastTerm = tempTerm
 		lastLogTerm = tempLogTerm
+		DaLogger.Info("Resending with index %d and term %d", message.Index, message.Term)
 	} else {
 		daDataLock.Lock()
 		lastIndex = message.Index
@@ -166,7 +224,7 @@ func pickAction(message *raftpb.Message) {
 		lastLogTerm = message.LogTerm
 		daDataLock.Unlock()
 		daInterruptLock.RUnlock()
-		daInterrupt(message, actionType)
+		//daInterrupt(message, actionType)
 		daInterruptLock.RLock()
 	}
 }

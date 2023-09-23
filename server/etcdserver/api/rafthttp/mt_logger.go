@@ -16,7 +16,7 @@ func (logger *Logger) Debug(format string, args ...any) {
 	if len(args) == 0 {
 		logger.stdout.Println(format)
 	} else {
-		logger.stdout.Printf(format+"\n", args)
+		logger.stdout.Printf(format+"\n", args...)
 	}
 }
 
@@ -24,7 +24,7 @@ func (logger *Logger) Info(format string, args ...any) {
 	if len(args) == 0 {
 		logger.stdout.Println(format)
 	} else {
-		logger.stdout.Printf(format+"\n", args)
+		logger.stdout.Printf(format+"\n", args...)
 	}
 }
 
@@ -32,7 +32,7 @@ func (logger *Logger) Error(format string, args ...any) {
 	if len(args) == 0 {
 		logger.stderr.Println(format)
 	} else {
-		logger.stderr.Printf(format+"\n", args)
+		logger.stderr.Printf(format+"\n", args...)
 	}
 }
 
@@ -40,7 +40,7 @@ func (logger *Logger) ErrorErr(err error, format string, args ...any) {
 	if len(args) == 0 {
 		logger.stderr.Println(format + "\n" + err.Error())
 	} else {
-		logger.stderr.Printf(format+"\n"+err.Error()+"\n", args)
+		logger.stderr.Printf(format+"\n"+err.Error()+"\n", args...)
 	}
 }
 
