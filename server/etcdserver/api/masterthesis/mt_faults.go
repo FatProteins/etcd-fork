@@ -1,4 +1,4 @@
-package rafthttp
+package masterthesis
 
 import (
 	crand "crypto/rand"

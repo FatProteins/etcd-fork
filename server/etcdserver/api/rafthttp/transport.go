@@ -16,6 +16,7 @@ package rafthttp
 
 import (
 	"context"
+	"go.etcd.io/etcd/server/v3/etcdserver/api/masterthesis"
 	"go.etcd.io/raft/v3"
 	"net/http"
 	"sync"
@@ -173,11 +174,11 @@ func (t *Transport) Get(id types.ID) Peer {
 }
 
 func (t *Transport) Send(msgs []raftpb.Message) {
-	daInterruptLock.RLock()
-	defer daInterruptLock.RUnlock()
+	masterthesis.DaInterruptLock.RLock()
+	defer masterthesis.DaInterruptLock.RUnlock()
 	for _, m := range msgs {
-		//daInterrupt(m)
-		pickAction(&m)
+		//DaInterrupt(m)
+		masterthesis.PickAction(&m)
 		if m.To == 0 {
 			// ignore intentionally dropped message
 			continue

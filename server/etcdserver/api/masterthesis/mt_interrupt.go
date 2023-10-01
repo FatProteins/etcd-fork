@@ -1,7 +1,8 @@
-package rafthttp
+package masterthesis
 
 import (
 	"context"
+	"fmt"
 	"go.etcd.io/etcd/api/v3/etcdserverpb"
 	"go.etcd.io/etcd/pkg/v3/osutil"
 	"go.etcd.io/etcd/server/v3/daproto"
@@ -37,7 +38,7 @@ func init() {
 	DaLogger.Info("DETECTION ENABLED")
 	toDaSocketPath, exists := os.LookupEnv("TO_DA_CONTAINER_SOCKET_PATH")
 	if !exists {
-		//panic("To-DA Socket path env variable is not defined")
+		panic("To-DA Socket path env variable is not defined")
 	}
 
 	//fromDaSocketPath, exists := os.LookupEnv("FROM_DA_CONTAINER_SOCKET_PATH")
@@ -47,7 +48,7 @@ func init() {
 
 	toDaUnixAddr, err := net.ResolveUnixAddr("unix", toDaSocketPath)
 	if err != nil {
-		//panic(fmt.Sprintf("Failed to resolve unix addr To-DA socket: '%s'", err.Error()))
+		panic(fmt.Sprintf("Failed to resolve unix addr To-DA socket: '%s'", err.Error()))
 	}
 
 	//fromDaUnixAddr, err := net.ResolveUnixAddr("unixgram", fromDaSocketPath)
@@ -59,7 +60,7 @@ func init() {
 
 	sendConn, err = net.DialUnix("unix", nil, toDaUnixAddr)
 	if err != nil {
-		//panic(fmt.Sprintf("Failed to dial DA unix socket: '%s'", err.Error()))
+		panic(fmt.Sprintf("Failed to dial DA unix socket: '%s'", err.Error()))
 	}
 
 	//recvConn, err = net.DialUnix("unixgram", nil, fromDaUnixAddr)
@@ -74,7 +75,7 @@ func init() {
 
 	faultConfig, err := ReadFaultConfig(configPath)
 	if err != nil {
-		//panic(fmt.Sprintf("Failed to read fault config from path '%s': '%s'", configPath, err.Error()))
+		panic(fmt.Sprintf("Failed to read fault config from path '%s': '%s'", configPath, err.Error()))
 	}
 
 	DaActionPicker.Store(NewActionPicker(faultConfig))
@@ -108,21 +109,18 @@ func init() {
 	//}()
 }
 
-var daInterruptLock = sync.RWMutex{}
-var daDataLock = sync.Mutex{}
+var DaInterruptLock = sync.RWMutex{}
+var DaDataLock = sync.Mutex{}
 var lastIndex uint64 = 0
 var lastTerm uint64 = 0
 var lastLogTerm uint64 = 0
-var forceActionType = true
-var forcedActionType = daproto.ActionType_RESEND_LAST_MESSAGE_ACTION_TYPE
-var forcedMessageKey = "10000"
 
 type kv struct {
 	Key string
 	Val string
 }
 
-func pickAction(message *raftpb.Message) {
+func PickAction(message *raftpb.Message) {
 	//DaLogger.Info("messageType %s with %d entries", message.Type, len(message.Entries))
 	if !daEnabled {
 		return
@@ -132,8 +130,8 @@ func pickAction(message *raftpb.Message) {
 	}
 
 	var actionType daproto.ActionType
-	if forceActionType {
-		actionType = forcedActionType
+	if ForceActionType {
+		actionType = ForcedActionType
 	} else {
 		action := DaActionPicker.Load().DetermineAction()
 		actionType = action.Type()
@@ -159,7 +157,7 @@ func pickAction(message *raftpb.Message) {
 		DaLogger.Debug("Got req: %s", req.String())
 		if req.Put != nil {
 			putKey := string(req.Put.Key)
-			if putKey == forcedMessageKey {
+			if putKey == ForcedMessageKey {
 				hasForcedMessageKey = true
 			}
 			DaLogger.Debug("Got key: %s", putKey)
@@ -168,18 +166,18 @@ func pickAction(message *raftpb.Message) {
 		}
 	}
 
-	if (actionType == daproto.ActionType_NOOP_ACTION_TYPE) && (hasForcedMessageKey || !forceActionType) && message.Type == raftpb.MsgApp {
-		daDataLock.Lock()
-		defer daDataLock.Unlock()
+	if (actionType == daproto.ActionType_NOOP_ACTION_TYPE) && (ForceOnMessageKey && hasForcedMessageKey || !ForceActionType) && message.Type == raftpb.MsgApp {
+		DaDataLock.Lock()
+		defer DaDataLock.Unlock()
 		lastIndex = message.Index
 		lastTerm = message.Term
 		lastLogTerm = message.LogTerm
-	} else if (actionType == daproto.ActionType_RESEND_LAST_MESSAGE_ACTION_TYPE) && (hasForcedMessageKey || !forceActionType) && message.Type == raftpb.MsgApp {
+	} else if (actionType == daproto.ActionType_RESEND_LAST_MESSAGE_ACTION_TYPE) && (ForceOnMessageKey && hasForcedMessageKey || !ForceActionType) && message.Type == raftpb.MsgApp {
 		tempIdx := message.Index
 		tempTerm := message.Term
 		tempLogTerm := message.LogTerm
-		daDataLock.Lock()
-		defer daDataLock.Unlock()
+		DaDataLock.Lock()
+		defer DaDataLock.Unlock()
 		message.Index = message.Index - 2
 		//message.Term = message.Term + 1
 		DaLogger.Info("Message %s has %d entries", message.Type.String(), len(message.Entries))
@@ -218,22 +216,22 @@ func pickAction(message *raftpb.Message) {
 		lastLogTerm = tempLogTerm
 		DaLogger.Info("Resending with index %d and term %d", message.Index, message.Term)
 	} else {
-		daDataLock.Lock()
+		DaDataLock.Lock()
 		lastIndex = message.Index
 		lastTerm = message.Term
 		lastLogTerm = message.LogTerm
-		daDataLock.Unlock()
-		daInterruptLock.RUnlock()
-		//daInterrupt(message, actionType)
-		daInterruptLock.RLock()
+		DaDataLock.Unlock()
+		DaInterruptLock.RUnlock()
+		//DaInterrupt(message, actionType)
+		DaInterruptLock.RLock()
 	}
 }
 
-func daInterrupt(message *raftpb.Message, actionType daproto.ActionType) {
-	daInterruptLock.Lock()
-	defer daInterruptLock.Unlock()
+func DaInterrupt(message *raftpb.Message, actionType daproto.ActionType) {
+	DaInterruptLock.Lock()
+	defer DaInterruptLock.Unlock()
 
-	daMsg := daproto.Message{MessageType: mapMsgType(message.Type), ActionType: actionType}
+	daMsg := daproto.Message{MessageType: MapMsgType(message.Type), ActionType: actionType}
 	//DaLogger.Printf("Received interrupt for msg of type '%s'\n", daMsg.MessageType)
 	daMsgBytes, err := proto.Marshal(&daMsg)
 	if err != nil {
@@ -266,7 +264,7 @@ func daInterrupt(message *raftpb.Message, actionType daproto.ActionType) {
 	//DaLogger.Printf("Successfully received response from DA: %s\n", daResp.String())
 }
 
-func mapMsgType(msgType raftpb.MessageType) daproto.MessageType {
+func MapMsgType(msgType raftpb.MessageType) daproto.MessageType {
 	switch msgType {
 	case raftpb.MsgHeartbeat, raftpb.MsgHeartbeatResp:
 		return daproto.MessageType_HEARTBEAT
