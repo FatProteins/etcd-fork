@@ -613,7 +613,11 @@ type PutRequest struct {
 	IgnoreValue bool `protobuf:"varint,5,opt,name=ignore_value,json=ignoreValue,proto3" json:"ignore_value,omitempty"`
 	// If ignore_lease is set, etcd updates the key using its current lease.
 	// Returns an error if the key does not exist.
-	IgnoreLease          bool     `protobuf:"varint,6,opt,name=ignore_lease,json=ignoreLease,proto3" json:"ignore_lease,omitempty"`
+	IgnoreLease bool `protobuf:"varint,6,opt,name=ignore_lease,json=ignoreLease,proto3" json:"ignore_lease,omitempty"`
+	// idempotencyKey START
+	ClientId       int64 `protobuf:"bytes,7,opt,name=client_id,proto3" json:"client_id,omitempty"`
+	IdempotencyKey int64 `protobuf:"varint,8,opt,name=idempotency_key,proto3" json:"idempotency_key,omitempty"`
+	// idempotencyKey END
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`
 	XXX_sizecache        int32    `json:"-"`
@@ -761,7 +765,11 @@ type DeleteRangeRequest struct {
 	RangeEnd []byte `protobuf:"bytes,2,opt,name=range_end,json=rangeEnd,proto3" json:"range_end,omitempty"`
 	// If prev_kv is set, etcd gets the previous key-value pairs before deleting it.
 	// The previous key-value pairs will be returned in the delete response.
-	PrevKv               bool     `protobuf:"varint,3,opt,name=prev_kv,json=prevKv,proto3" json:"prev_kv,omitempty"`
+	PrevKv bool `protobuf:"varint,3,opt,name=prev_kv,json=prevKv,proto3" json:"prev_kv,omitempty"`
+	// idempotencyKey START
+	ClientId       int64 `protobuf:"varint,4,opt,name=client_id,proto3" json:"client_id,omitempty"`
+	IdempotencyKey int64 `protobuf:"varint,5,opt,name=idempotency_key,proto3" json:"idempotency_key,omitempty"`
+	// idempotencyKey END
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`
 	XXX_sizecache        int32    `json:"-"`

@@ -16,7 +16,7 @@ package rafthttp
 
 import (
 	"context"
-	"go.etcd.io/etcd/server/v3/etcdserver/api/masterthesis"
+	"go.etcd.io/etcd/server/v3/etcdserver/masterthesis"
 	"go.etcd.io/raft/v3"
 	"net/http"
 	"sync"

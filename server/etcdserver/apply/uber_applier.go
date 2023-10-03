@@ -16,6 +16,7 @@ package apply
 
 import (
 	"context"
+	"go.etcd.io/etcd/server/v3/etcdserver/masterthesis"
 	"time"
 
 	"go.uber.org/zap"
@@ -46,6 +47,8 @@ type uberApplier struct {
 
 	// This is the applier used for wrapping when alarms change
 	applyV3base applierV3
+
+	clientCache *masterthesis.ClientCache
 }
 
 func NewUberApplier(
@@ -70,6 +73,35 @@ func NewUberApplier(
 		warningApplyDuration: warningApplyDuration,
 		applyV3:              applyV3base_,
 		applyV3base:          applyV3base_,
+	}
+	ua.restoreAlarms()
+	return ua
+}
+
+func NewUberApplierWithClientCache(
+	lg *zap.Logger,
+	be backend.Backend,
+	kv mvcc.KV,
+	alarmStore *v3alarm.AlarmStore,
+	authStore auth.AuthStore,
+	lessor lease.Lessor,
+	cluster *membership.RaftCluster,
+	raftStatus RaftStatusGetter,
+	snapshotServer SnapshotServer,
+	consistentIndex cindex.ConsistentIndexer,
+	warningApplyDuration time.Duration,
+	txnModeWriteWithSharedBuffer bool,
+	quotaBackendBytesCfg int64,
+	clientCache *masterthesis.ClientCache) UberApplier {
+	applyV3base_ := newApplierV3(lg, be, kv, alarmStore, authStore, lessor, cluster, raftStatus, snapshotServer, consistentIndex, txnModeWriteWithSharedBuffer, quotaBackendBytesCfg)
+
+	ua := &uberApplier{
+		lg:                   lg,
+		alarmStore:           alarmStore,
+		warningApplyDuration: warningApplyDuration,
+		applyV3:              applyV3base_,
+		applyV3base:          applyV3base_,
+		clientCache:          clientCache,
 	}
 	ua.restoreAlarms()
 	return ua

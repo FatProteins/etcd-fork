@@ -27,7 +27,8 @@ var (
 	leaseBucketName = []byte("lease")
 	alarmBucketName = []byte("alarm")
 
-	clusterBucketName = []byte("cluster")
+	clusterBucketName     = []byte("cluster")
+	clientCacheBucketName = []byte("client_cache")
 
 	membersBucketName        = []byte("members")
 	membersRemovedBucketName = []byte("members_removed")
@@ -40,11 +41,12 @@ var (
 )
 
 var (
-	Key     = backend.Bucket(bucket{id: 1, name: keyBucketName, safeRangeBucket: true})
-	Meta    = backend.Bucket(bucket{id: 2, name: metaBucketName, safeRangeBucket: false})
-	Lease   = backend.Bucket(bucket{id: 3, name: leaseBucketName, safeRangeBucket: false})
-	Alarm   = backend.Bucket(bucket{id: 4, name: alarmBucketName, safeRangeBucket: false})
-	Cluster = backend.Bucket(bucket{id: 5, name: clusterBucketName, safeRangeBucket: false})
+	Key         = backend.Bucket(bucket{id: 1, name: keyBucketName, safeRangeBucket: true})
+	Meta        = backend.Bucket(bucket{id: 2, name: metaBucketName, safeRangeBucket: false})
+	Lease       = backend.Bucket(bucket{id: 3, name: leaseBucketName, safeRangeBucket: false})
+	Alarm       = backend.Bucket(bucket{id: 4, name: alarmBucketName, safeRangeBucket: false})
+	Cluster     = backend.Bucket(bucket{id: 5, name: clusterBucketName, safeRangeBucket: false})
+	ClientCache = backend.Bucket(bucket{id: 6, name: clientCacheBucketName, safeRangeBucket: false})
 
 	Members        = backend.Bucket(bucket{id: 10, name: membersBucketName, safeRangeBucket: false})
 	MembersRemoved = backend.Bucket(bucket{id: 11, name: membersRemovedBucketName, safeRangeBucket: false})

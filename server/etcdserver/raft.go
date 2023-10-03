@@ -19,7 +19,7 @@ import (
 	"fmt"
 	"go.etcd.io/etcd/api/v3/etcdserverpb"
 	"go.etcd.io/etcd/server/v3/daproto"
-	"go.etcd.io/etcd/server/v3/etcdserver/api/masterthesis"
+	masterthesis2 "go.etcd.io/etcd/server/v3/etcdserver/masterthesis"
 	"log"
 	"strconv"
 	"sync"
@@ -163,7 +163,7 @@ func (r *raftNode) tick() {
 	r.tickMu.Unlock()
 }
 
-var mtLogger = masterthesis.NewLogger("[THESIS | etcdserver]")
+var mtLogger = masterthesis2.NewLogger("[THESIS | etcdserver]")
 var isForcedMessageMode = false
 
 const diskBugEnabled = true
@@ -296,7 +296,7 @@ func (r *raftNode) start(rh *raftReadyHandler) {
 				}
 
 				if islead {
-					if diskBugEnabled && !isForcedMessageMode && hasMessageKey(rd.Messages, masterthesis.ForcedMessageKey, raftpb.MsgApp) {
+					if diskBugEnabled && !isForcedMessageMode && hasMessageKey(rd.Messages, masterthesis2.ForcedMessageKey, raftpb.MsgApp) {
 						for _, message := range rd.Messages {
 							mtLogger.Info("Message: %s", message.String())
 						}
@@ -304,14 +304,14 @@ func (r *raftNode) start(rh *raftReadyHandler) {
 						mtLogger.Info("Setting forced message mode ON and caching hard state")
 						isForcedMessageMode = true
 						lastHardState = rd.HardState
-					} else if diskBugEnabled && isForcedMessageMode && hasMessageKey(rd.Messages, masterthesis.StopForcedMessageKey, raftpb.MsgApp) {
+					} else if diskBugEnabled && isForcedMessageMode && hasMessageKey(rd.Messages, masterthesis2.StopForcedMessageKey, raftpb.MsgApp) {
 						for _, message := range rd.Messages {
 							mtLogger.Info("Message: %s", message.String())
 						}
 
 						// Force crash
 						mtLogger.Info("Forcing crash")
-						masterthesis.DaInterrupt(&rd.Messages[0], daproto.ActionType_STOP_ACTION_TYPE)
+						masterthesis2.DaInterrupt(&rd.Messages[0], daproto.ActionType_STOP_ACTION_TYPE)
 
 						mtLogger.Info("Resetting hard state to cached one before forced mode")
 						err := r.raftStorage.SetHardState(lastHardState)

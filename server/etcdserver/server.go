@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"expvar"
 	"fmt"
+	"go.etcd.io/etcd/server/v3/etcdserver/masterthesis"
 	"math"
 	"math/rand"
 	"net/http"
@@ -256,6 +257,11 @@ type EtcdServer struct {
 
 	uberApply apply.UberApplier
 
+	// idempotencyKey START
+	clientCache *masterthesis.ClientCache
+
+	// idempotencyKey END
+
 	applyWait wait.WaitTime
 
 	kv         mvcc.WatchableKV
@@ -393,6 +399,8 @@ func NewServer(cfg config.ServerConfig) (srv *EtcdServer, err error) {
 		}
 		srv.compactor.Run()
 	}
+
+	srv.clientCache = masterthesis.NewClientCache(srv.be)
 
 	if err = srv.restoreAlarms(); err != nil {
 		return nil, err
@@ -1092,8 +1100,8 @@ func (s *EtcdServer) applySnapshot(ep *etcdProgress, toApply *toApply) {
 }
 
 func (s *EtcdServer) NewUberApplier() apply.UberApplier {
-	return apply.NewUberApplier(s.lg, s.be, s.KV(), s.alarmStore, s.authStore, s.lessor, s.cluster, s, s, s.consistIndex,
-		s.Cfg.WarningApplyDuration, s.Cfg.ExperimentalTxnModeWriteWithSharedBuffer, s.Cfg.QuotaBackendBytes)
+	return apply.NewUberApplierWithClientCache(s.lg, s.be, s.KV(), s.alarmStore, s.authStore, s.lessor, s.cluster, s, s, s.consistIndex,
+		s.Cfg.WarningApplyDuration, s.Cfg.ExperimentalTxnModeWriteWithSharedBuffer, s.Cfg.QuotaBackendBytes, s.clientCache)
 }
 
 func verifySnapshotIndex(snapshot raftpb.Snapshot, cindex uint64) {

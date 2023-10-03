@@ -1,0 +1,23 @@
+syntax = "proto3";
+package masterthesis;
+
+import "gogoproto/gogo.proto";
+import "google/protobuf/descriptor.proto";
+
+option (gogoproto.marshaler_all) = true;
+option (gogoproto.sizer_all) = true;
+option (gogoproto.unmarshaler_all) = true;
+option (gogoproto.goproto_getters_all) = false;
+option (gogoproto.goproto_enum_prefix_all) = false;
+
+
+option go_package = "./masterthesis";
+
+message CachedResponse {
+  int64 clientID = 1;
+  int64 serialNumber = 2;
+  uint64 logIdx = 3;
+  bool applied = 4;
+  optional bytes Response = 5;
+}
+

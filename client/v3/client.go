@@ -16,8 +16,11 @@ package clientv3
 
 import (
 	"context"
+	crand "crypto/rand"
 	"errors"
 	"fmt"
+	"math"
+	"math/big"
 	"strconv"
 	"strings"
 	"sync"
@@ -74,6 +77,10 @@ type Client struct {
 
 	lgMu *sync.RWMutex
 	lg   *zap.Logger
+
+	// idempotencyKey START
+	clientID int64
+	// idempotencyKey END
 }
 
 // New creates a new etcdv3 client from a given configuration.
@@ -97,6 +104,17 @@ func NewCtxClient(ctx context.Context, opts ...Option) *Client {
 	if c.lg == nil {
 		c.lg = zap.NewNop()
 	}
+
+	// idempotencyKey START
+	if c.clientID == 0 {
+		cid, err := crand.Int(crand.Reader, big.NewInt(math.MaxInt64))
+		if err != nil {
+			panic(err)
+		}
+		c.clientID = cid.Int64()
+	}
+	// idempotencyKey END
+
 	return c
 }
 
@@ -119,6 +137,18 @@ func WithZapLogger(lg *zap.Logger) Option {
 		c.lg = lg
 	}
 }
+
+// idempotencyKey START
+func WithClientID(clientID int64) Option {
+	if clientID == 0 {
+		panic("client ID must not be 0")
+	}
+	return func(c *Client) {
+		c.clientID = clientID
+	}
+}
+
+// idempotencyKey END
 
 // WithLogger overrides the logger.
 //
@@ -370,7 +400,14 @@ func newClient(cfg *Config) (*Client, error) {
 		lgMu:     new(sync.RWMutex),
 	}
 
-	var err error
+	// idempotencyKey START
+	cid, err := crand.Int(crand.Reader, big.NewInt(math.MaxInt64))
+	if err != nil {
+		panic(err)
+	}
+	client.clientID = cid.Int64()
+	// idempotencyKey END
+
 	if cfg.Logger != nil {
 		client.lg = cfg.Logger
 	} else if cfg.LogConfig != nil {

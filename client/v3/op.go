@@ -14,7 +14,9 @@
 
 package clientv3
 
-import pb "go.etcd.io/etcd/api/v3/etcdserverpb"
+import (
+	pb "go.etcd.io/etcd/api/v3/etcdserverpb"
+)
 
 type opType int
 
@@ -72,6 +74,10 @@ type Op struct {
 	// for put
 	val     []byte
 	leaseID LeaseID
+
+	// idempotency-key START
+	idempotencyKey int64
+	// idempotency-key END
 
 	// txn
 	cmps    []Cmp
@@ -194,10 +200,10 @@ func (op Op) toRequestOp() *pb.RequestOp {
 	case tRange:
 		return &pb.RequestOp{Request: &pb.RequestOp_RequestRange{RequestRange: op.toRangeRequest()}}
 	case tPut:
-		r := &pb.PutRequest{Key: op.key, Value: op.val, Lease: int64(op.leaseID), PrevKv: op.prevKV, IgnoreValue: op.ignoreValue, IgnoreLease: op.ignoreLease}
+		r := &pb.PutRequest{Key: op.key, Value: op.val, Lease: int64(op.leaseID), PrevKv: op.prevKV, IgnoreValue: op.ignoreValue, IgnoreLease: op.ignoreLease, IdempotencyKey: op.idempotencyKey}
 		return &pb.RequestOp{Request: &pb.RequestOp_RequestPut{RequestPut: r}}
 	case tDeleteRange:
-		r := &pb.DeleteRangeRequest{Key: op.key, RangeEnd: op.end, PrevKv: op.prevKV}
+		r := &pb.DeleteRangeRequest{Key: op.key, RangeEnd: op.end, PrevKv: op.prevKV, IdempotencyKey: op.idempotencyKey}
 		return &pb.RequestOp{Request: &pb.RequestOp_RequestDeleteRange{RequestDeleteRange: r}}
 	case tTxn:
 		return &pb.RequestOp{Request: &pb.RequestOp_RequestTxn{RequestTxn: op.toTxnRequest()}}
@@ -335,6 +341,14 @@ func (op *Op) applyOpts(opts []OpOption) {
 
 // OpOption configures Operations like Get, Put, Delete.
 type OpOption func(*Op)
+
+// idempotency-key START
+// WithIdempotency attaches an IdempotencyKey for a client in 'Put' request.
+func WithIdempotency(idempotencyKey int64) OpOption {
+	return func(op *Op) { op.idempotencyKey = idempotencyKey }
+}
+
+// idempotency-key END
 
 // WithLease attaches a lease ID to a key in 'Put' request.
 func WithLease(leaseID LeaseID) OpOption {

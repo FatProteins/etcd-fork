@@ -16,7 +16,6 @@ package clientv3
 
 import (
 	"context"
-
 	"google.golang.org/grpc"
 
 	pb "go.etcd.io/etcd/api/v3/etcdserverpb"
@@ -93,10 +92,13 @@ func (resp *TxnResponse) OpResponse() OpResponse {
 type kv struct {
 	remote   pb.KVClient
 	callOpts []grpc.CallOption
+	// idempotencyKey START
+	clientID int64
+	// idempotencyKey END
 }
 
 func NewKV(c *Client) KV {
-	api := &kv{remote: RetryKVClient(c)}
+	api := &kv{remote: RetryKVClient(c), clientID: c.clientID}
 	if c != nil {
 		api.callOpts = c.callOpts
 	}
@@ -104,7 +106,7 @@ func NewKV(c *Client) KV {
 }
 
 func NewKVFromKVClient(remote pb.KVClient, c *Client) KV {
-	api := &kv{remote: remote}
+	api := &kv{remote: remote, clientID: c.clientID}
 	if c != nil {
 		api.callOpts = c.callOpts
 	}
@@ -157,21 +159,29 @@ func (kv *kv) Do(ctx context.Context, op Op) (OpResponse, error) {
 		}
 	case tPut:
 		var resp *pb.PutResponse
-		r := &pb.PutRequest{Key: op.key, Value: op.val, Lease: int64(op.leaseID), PrevKv: op.prevKV, IgnoreValue: op.ignoreValue, IgnoreLease: op.ignoreLease}
+		// idempotencyKey START
+		r := &pb.PutRequest{Key: op.key, Value: op.val, Lease: int64(op.leaseID), PrevKv: op.prevKV, IgnoreValue: op.ignoreValue, IgnoreLease: op.ignoreLease, ClientId: kv.clientID}
+		// idempotencyKey END
 		resp, err = kv.remote.Put(ctx, r, kv.callOpts...)
 		if err == nil {
 			return OpResponse{put: (*PutResponse)(resp)}, nil
 		}
 	case tDeleteRange:
 		var resp *pb.DeleteRangeResponse
-		r := &pb.DeleteRangeRequest{Key: op.key, RangeEnd: op.end, PrevKv: op.prevKV}
+		// idempotencyKey START
+		r := &pb.DeleteRangeRequest{Key: op.key, RangeEnd: op.end, PrevKv: op.prevKV, ClientId: kv.clientID}
+		// idempotencyKey END
 		resp, err = kv.remote.DeleteRange(ctx, r, kv.callOpts...)
 		if err == nil {
 			return OpResponse{del: (*DeleteResponse)(resp)}, nil
 		}
 	case tTxn:
 		var resp *pb.TxnResponse
-		resp, err = kv.remote.Txn(ctx, op.toTxnRequest(), kv.callOpts...)
+		// idempotencyKey START
+		r := op.toTxnRequest()
+		kv.populateTxnWithClientID(r)
+		resp, err = kv.remote.Txn(ctx, r, kv.callOpts...)
+		// idempotencyKey END
 		if err == nil {
 			return OpResponse{txn: (*TxnResponse)(resp)}, nil
 		}
@@ -180,3 +190,30 @@ func (kv *kv) Do(ctx context.Context, op Op) (OpResponse, error) {
 	}
 	return OpResponse{}, toErr(ctx, err)
 }
+
+// idempotencyKey START
+func (kv *kv) populateTxnWithClientID(request *pb.TxnRequest) {
+	for _, op := range request.Success {
+		switch req := op.Request.(type) {
+		case *pb.RequestOp_RequestPut:
+			req.RequestPut.ClientId = kv.clientID
+		case *pb.RequestOp_RequestDeleteRange:
+			req.RequestDeleteRange.ClientId = kv.clientID
+		case *pb.RequestOp_RequestTxn:
+			kv.populateTxnWithClientID(req.RequestTxn)
+		}
+	}
+
+	for _, op := range request.Failure {
+		switch req := op.Request.(type) {
+		case *pb.RequestOp_RequestPut:
+			req.RequestPut.ClientId = kv.clientID
+		case *pb.RequestOp_RequestDeleteRange:
+			req.RequestDeleteRange.ClientId = kv.clientID
+		case *pb.RequestOp_RequestTxn:
+			kv.populateTxnWithClientID(req.RequestTxn)
+		}
+	}
+}
+
+// idempotencyKey END
