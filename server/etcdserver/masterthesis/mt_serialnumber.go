@@ -4,7 +4,6 @@ import (
 	"errors"
 	"github.com/gogo/protobuf/proto"
 	"go.etcd.io/etcd/server/v3/storage/backend"
-	"go.etcd.io/etcd/server/v3/storage/schema"
 	"sync"
 )
 
@@ -57,8 +56,8 @@ func (cc *ClientCache) initAndRecover() {
 	tx := cc.be.BatchTx()
 
 	tx.LockOutsideApply()
-	schema.UnsafeCreateClientCacheBucket(tx)
-	crs := schema.MustUnsafeGetAllCachedResponses(tx)
+	UnsafeCreateClientCacheBucket(tx)
+	crs := MustUnsafeGetAllCachedResponses(tx)
 	tx.Unlock()
 	for _, cr := range crs {
 		ID := cr.ClientID
@@ -113,7 +112,7 @@ func (cc *ClientCache) StartRequest(tx backend.BatchTx, clientID, serialNumber i
 	cr.SerialNumber = serialNumber
 	cr.LogIdx = logIdx
 	tx.LockOutsideApply()
-	schema.MustUnsafePutCachedResponse(tx, cr)
+	MustUnsafePutCachedResponse(tx, cr)
 	tx.Unlock()
 	cc.cacheMap[clientID] = cr
 
@@ -139,7 +138,7 @@ func (cc *ClientCache) UnsafeStoreResponseBeforeApply(tx backend.BatchTx, client
 	}
 
 	cr.Response = data
-	schema.MustUnsafePutCachedResponse(tx, cr)
+	MustUnsafePutCachedResponse(tx, cr)
 	cc.cacheMap[clientID] = cr
 }
 
@@ -157,6 +156,6 @@ func (cc *ClientCache) UnsafeSetApplied(tx backend.BatchTx, clientID, serialNumb
 	}
 
 	cr.Applied = true
-	schema.MustUnsafePutCachedResponse(tx, cr)
+	MustUnsafePutCachedResponse(tx, cr)
 	cc.cacheMap[clientID] = cr
 }

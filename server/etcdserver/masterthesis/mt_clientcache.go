@@ -12,25 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package schema
+package masterthesis
 
 import (
 	"encoding/binary"
 	"fmt"
 	"github.com/golang/protobuf/proto"
-	"go.etcd.io/etcd/server/v3/etcdserver/masterthesis"
-
 	"go.etcd.io/etcd/server/v3/storage/backend"
+	"go.etcd.io/etcd/server/v3/storage/schema"
 )
 
 func UnsafeCreateClientCacheBucket(tx backend.BatchTx) {
-	tx.UnsafeCreateBucket(ClientCache)
+	tx.UnsafeCreateBucket(schema.ClientCache)
 }
 
-func MustUnsafeGetAllCachedResponses(tx backend.ReadTx) []*masterthesis.CachedResponse {
-	ls := make([]*masterthesis.CachedResponse, 0)
-	err := tx.UnsafeForEach(ClientCache, func(k, v []byte) error {
-		var cr masterthesis.CachedResponse
+func MustUnsafeGetAllCachedResponses(tx backend.ReadTx) []*CachedResponse {
+	ls := make([]*CachedResponse, 0)
+	err := tx.UnsafeForEach(schema.ClientCache, func(k, v []byte) error {
+		var cr CachedResponse
 		err := proto.Unmarshal(v, &cr)
 		if err != nil {
 			return fmt.Errorf("failed to Unmarshal cached response proto item; client ID=%016x", bytesToClientID(k))
@@ -44,26 +43,26 @@ func MustUnsafeGetAllCachedResponses(tx backend.ReadTx) []*masterthesis.CachedRe
 	return ls
 }
 
-func MustUnsafePutCachedResponse(tx backend.BatchTx, cr *masterthesis.CachedResponse) {
+func MustUnsafePutCachedResponse(tx backend.BatchTx, cr *CachedResponse) {
 	key := clientIDToBytes(cr.ClientID)
 
 	val, err := proto.Marshal(cr)
 	if err != nil {
 		panic("failed to marshal cached response proto item")
 	}
-	tx.UnsafePut(ClientCache, key, val)
+	tx.UnsafePut(schema.ClientCache, key, val)
 }
 
-func UnsafeDeleteCachedResponse(tx backend.BatchTx, cr *masterthesis.CachedResponse) {
-	tx.UnsafeDelete(ClientCache, clientIDToBytes(cr.ClientID))
+func UnsafeDeleteCachedResponse(tx backend.BatchTx, cr *CachedResponse) {
+	tx.UnsafeDelete(schema.ClientCache, clientIDToBytes(cr.ClientID))
 }
 
-func MustUnsafeGetCachedResponse(tx backend.BatchTx, clientID int64) *masterthesis.CachedResponse {
-	_, vs := tx.UnsafeRange(ClientCache, clientIDToBytes(clientID), nil, 0)
+func MustUnsafeGetCachedResponse(tx backend.BatchTx, clientID int64) *CachedResponse {
+	_, vs := tx.UnsafeRange(schema.ClientCache, clientIDToBytes(clientID), nil, 0)
 	if len(vs) != 1 {
 		return nil
 	}
-	var cr masterthesis.CachedResponse
+	var cr CachedResponse
 	err := proto.Unmarshal(vs[0], &cr)
 	if err != nil {
 		panic("failed to unmarshal cached response proto item")
