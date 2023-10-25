@@ -16,6 +16,7 @@ package apply
 
 import (
 	"context"
+	"go.etcd.io/etcd/server/v3/etcdserver/api/masterthesis"
 	"time"
 
 	"go.uber.org/zap"
@@ -114,6 +115,7 @@ func (a *uberApplier) Apply(r *pb.InternalRaftRequest, shouldApplyV3 membership.
 	// then dispatch() unpacks the request to a specific method (like Put),
 	// that gets executed down the hierarchy again:
 	// i.e. CorruptApplier.Put(CappedApplier.Put(...(BackendApplier.Put(...)))).
+	masterthesis.DaInterruptApply(r)
 	return a.applyV3.Apply(context.TODO(), r, shouldApplyV3, a.dispatch)
 }
 

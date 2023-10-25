@@ -18,10 +18,8 @@ import (
 	"expvar"
 	"fmt"
 	"go.etcd.io/etcd/api/v3/etcdserverpb"
-	"go.etcd.io/etcd/server/v3/daproto"
 	"go.etcd.io/etcd/server/v3/etcdserver/api/masterthesis"
 	"log"
-	"strconv"
 	"sync"
 	"time"
 
@@ -166,7 +164,7 @@ func (r *raftNode) tick() {
 var mtLogger = masterthesis.NewLogger("[THESIS | etcdserver]")
 var isForcedMessageMode = false
 
-const diskBugEnabled = true
+const diskBugEnabled = false
 
 var lastHardState raftpb.HardState
 
@@ -290,48 +288,8 @@ func (r *raftNode) start(rh *raftReadyHandler) {
 				}
 
 				// gofail: var raftBeforeSave struct{}
-				for i := 0; i < 7; i++ {
-					messageKey := strconv.Itoa(10099 + i)
-					hasMessageKey(rd.Messages, messageKey, -1)
-				}
-
-				if islead {
-					if diskBugEnabled && !isForcedMessageMode && hasMessageKey(rd.Messages, masterthesis.ForcedMessageKey, raftpb.MsgApp) {
-						for _, message := range rd.Messages {
-							mtLogger.Info("Message: %s", message.String())
-						}
-
-						mtLogger.Info("Setting forced message mode ON and caching hard state")
-						isForcedMessageMode = true
-						lastHardState = rd.HardState
-					} else if diskBugEnabled && isForcedMessageMode && hasMessageKey(rd.Messages, masterthesis.StopForcedMessageKey, raftpb.MsgApp) {
-						for _, message := range rd.Messages {
-							mtLogger.Info("Message: %s", message.String())
-						}
-
-						// Force crash
-						mtLogger.Info("Forcing crash")
-						masterthesis.DaInterrupt(&rd.Messages[0], daproto.ActionType_STOP_ACTION_TYPE)
-
-						mtLogger.Info("Resetting hard state to cached one before forced mode")
-						err := r.raftStorage.SetHardState(lastHardState)
-						if err != nil {
-							mtLogger.ErrorErr(err, "Failed to reset hard state")
-						}
-
-						mtLogger.Info("Setting forced message mode OFF")
-						isForcedMessageMode = false
-					}
-
-					//if !diskBugEnabled || !isForcedMessageMode {
-					if err := r.storage.Save(rd.HardState, rd.Entries); err != nil {
-						r.lg.Fatal("failed to save Raft hard state and entries", zap.Error(err))
-					}
-					//}
-				} else {
-					if err := r.storage.Save(rd.HardState, rd.Entries); err != nil {
-						r.lg.Fatal("failed to save Raft hard state and entries", zap.Error(err))
-					}
+				if err := r.storage.Save(rd.HardState, rd.Entries); err != nil {
+					r.lg.Fatal("failed to save Raft hard state and entries", zap.Error(err))
 				}
 				if !raft.IsEmptyHardState(rd.HardState) {
 					proposalsCommitted.Set(float64(rd.HardState.Commit))

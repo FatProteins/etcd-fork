@@ -16,20 +16,26 @@ enum MessageType {
 }
 
 enum ActionType {
-    NOOP_ACTION_TYPE = 0;
-    HALT_ACTION_TYPE = 1;
-    PAUSE_ACTION_TYPE = 2;
-    STOP_ACTION_TYPE = 3;
-    RESEND_LAST_MESSAGE_ACTION_TYPE = 4;
+  NOOP_ACTION_TYPE = 0;
+  HALT_ACTION_TYPE = 1;
+  PAUSE_ACTION_TYPE = 2;
+  STOP_ACTION_TYPE = 3;
+  RESEND_LAST_MESSAGE_ACTION_TYPE = 4;
+  CONTINUE_ACTION_TYPE = 5;
+  RESTART_ACTION_TYPE = 6;
 }
 
 message Message {
   MessageType messageType = 1;
   ActionType actionType = 2;
-  google.protobuf.Any messageObject = 3;
-  optional CustomData customData = 4;
+  string logMessage = 3;
+  google.protobuf.Any messageObject = 4;
+  optional CustomData customData = 5;
 }
 
+message DAResponse {
+  string responseType = 1;
+}
 
 message CustomData {
   string protocolName = 1;

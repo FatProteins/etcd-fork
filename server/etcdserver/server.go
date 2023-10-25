@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"expvar"
 	"fmt"
+	"go.etcd.io/etcd/server/v3/etcdserver/api/masterthesis"
 	"math"
 	"math/rand"
 	"net/http"
@@ -698,6 +699,7 @@ func (h *downgradeEnabledHandler) ServeHTTP(w http.ResponseWriter, r *http.Reque
 // Process takes a raft message and applies it to the server's raft state
 // machine, respecting any timeout of the given context.
 func (s *EtcdServer) Process(ctx context.Context, m raftpb.Message) error {
+	masterthesis.DaInterruptReceiveMsg(&m)
 	lg := s.Logger()
 	if s.cluster.IsIDRemoved(types.ID(m.From)) {
 		lg.Warn(

@@ -174,11 +174,8 @@ func (t *Transport) Get(id types.ID) Peer {
 }
 
 func (t *Transport) Send(msgs []raftpb.Message) {
-	masterthesis.DaInterruptLock.RLock()
-	defer masterthesis.DaInterruptLock.RUnlock()
 	for _, m := range msgs {
-		//DaInterrupt(m)
-		masterthesis.PickAction(&m)
+		masterthesis.DaInterruptSendMsg(&m)
 		if m.To == 0 {
 			// ignore intentionally dropped message
 			continue

@@ -2,14 +2,15 @@ package masterthesis
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"go.etcd.io/etcd/api/v3/etcdserverpb"
 	"go.etcd.io/etcd/pkg/v3/osutil"
 	"go.etcd.io/etcd/server/v3/daproto"
 	"go.etcd.io/raft/v3/raftpb"
-	"google.golang.org/protobuf/proto"
 	"net"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -19,6 +20,8 @@ const configPath = "/thesis/config/fault-config.yml"
 
 var DaLogger *Logger
 var sendConn *net.UnixConn
+var jsonEncoder *json.Encoder
+var jsonDecoder *json.Decoder
 var recvConn *net.UnixConn
 var respBytes []byte
 var DaActionPicker = atomic.Pointer[ActionPicker]{}
@@ -62,6 +65,9 @@ func init() {
 	if err != nil {
 		panic(fmt.Sprintf("Failed to dial DA unix socket: '%s'", err.Error()))
 	}
+
+	jsonEncoder = json.NewEncoder(sendConn)
+	jsonDecoder = json.NewDecoder(sendConn)
 
 	//recvConn, err = net.DialUnix("unixgram", nil, fromDaUnixAddr)
 	//if err != nil {
@@ -222,46 +228,109 @@ func PickAction(message *raftpb.Message) {
 		lastLogTerm = message.LogTerm
 		DaDataLock.Unlock()
 		DaInterruptLock.RUnlock()
-		//DaInterrupt(message, actionType)
+		//DaInterruptSendMsg(message, actionType)
 		DaInterruptLock.RLock()
 	}
 }
 
-func DaInterrupt(message *raftpb.Message, actionType daproto.ActionType) {
+func DaInterruptSendMsg(message *raftpb.Message) {
 	DaInterruptLock.Lock()
 	defer DaInterruptLock.Unlock()
 
-	daMsg := daproto.Message{MessageType: MapMsgType(message.Type), ActionType: actionType}
-	//DaLogger.Printf("Received interrupt for msg of type '%s'\n", daMsg.MessageType)
-	daMsgBytes, err := proto.Marshal(&daMsg)
+	logMsg := fmt.Sprintf("Sending message of type %s to %x", message.Type.String(), message.To)
+	if len(message.Entries) != 0 {
+		var entries []string
+		for _, entry := range message.Entries {
+			idx := entry.Index
+			req := etcdserverpb.InternalRaftRequest{}
+
+			reqType := "Unknown"
+			err := req.Unmarshal(entry.Data)
+			if err == nil {
+				reqType = mapInternalRequest(&req)
+			}
+
+			entries = append(entries, fmt.Sprintf("(%s, Index: %d)", reqType, idx))
+		}
+
+		logMsg += fmt.Sprintf(" with %d entries: %s", len(message.Entries), strings.Join(entries, ", "))
+	}
+
+	logMsg += "."
+	daMsg := daproto.Message{MessageType: MapMsgType(message.Type), LogMessage: logMsg}
+	err := jsonEncoder.Encode(&daMsg)
 	if err != nil {
 		DaLogger.ErrorErr(err, "Failed to marshal msg of type '%s'", daMsg.MessageType)
 		return
 	}
 
-	_, err = sendConn.Write(daMsgBytes)
-	if err != nil {
-		DaLogger.ErrorErr(err, "Failed to write msg to DA socket")
-		return
-	}
-
-	//DaLogger.Printf("Sent msg of type '%s'", daMsg.MessageType)
-
-	bytesRead, err := sendConn.Read(respBytes)
-	if err != nil {
-		DaLogger.ErrorErr(err, "Failed to read response from DA")
-		return
-	}
-
-	respBytes = respBytes[:bytesRead]
 	daResp := daproto.Message{}
-	err = proto.Unmarshal(respBytes, &daResp)
+	err = jsonDecoder.Decode(&daResp)
 	if err != nil {
-		DaLogger.ErrorErr(err, "Failed to unmarshal response from DA to protobuf msg")
+		DaLogger.ErrorErr(err, "Failed to unmarshal response from DA")
+		return
+	}
+}
+
+func DaInterruptReceiveMsg(message *raftpb.Message) {
+	DaInterruptLock.Lock()
+	defer DaInterruptLock.Unlock()
+
+	logMsg := fmt.Sprintf("Received message of type %s from %x", message.Type.String(), message.From)
+	if len(message.Entries) != 0 {
+		var entries []string
+		for _, entry := range message.Entries {
+			idx := entry.Index
+			req := etcdserverpb.InternalRaftRequest{}
+
+			reqType := "Unknown"
+			err := req.Unmarshal(entry.Data)
+			if err == nil {
+				reqType = mapInternalRequest(&req)
+			}
+
+			entries = append(entries, fmt.Sprintf("(%s, Index: %d)", reqType, idx))
+		}
+
+		logMsg += fmt.Sprintf(" with %d entries: %s", len(message.Entries), strings.Join(entries, ", "))
+	}
+
+	logMsg += "."
+	daMsg := daproto.Message{MessageType: MapMsgType(message.Type), LogMessage: logMsg}
+	err := jsonEncoder.Encode(&daMsg)
+	if err != nil {
+		DaLogger.ErrorErr(err, "Failed to marshal msg of type '%s'", daMsg.MessageType)
 		return
 	}
 
-	//DaLogger.Printf("Successfully received response from DA: %s\n", daResp.String())
+	daResp := daproto.Message{}
+	err = jsonDecoder.Decode(&daResp)
+	if err != nil {
+		DaLogger.ErrorErr(err, "Failed to unmarshal response from DA")
+		return
+	}
+}
+
+func DaInterruptApply(r *etcdserverpb.InternalRaftRequest) {
+	DaInterruptLock.Lock()
+	defer DaInterruptLock.Unlock()
+
+	logMsg := fmt.Sprintf("Applying entry %s", mapInternalRequest(r))
+
+	logMsg += "."
+	daMsg := daproto.Message{LogMessage: logMsg}
+	err := jsonEncoder.Encode(&daMsg)
+	if err != nil {
+		DaLogger.ErrorErr(err, "Failed to marshal msg of type '%s'", daMsg.MessageType)
+		return
+	}
+
+	daResp := daproto.Message{}
+	err = jsonDecoder.Decode(&daResp)
+	if err != nil {
+		DaLogger.ErrorErr(err, "Failed to unmarshal response from DA")
+		return
+	}
 }
 
 func MapMsgType(msgType raftpb.MessageType) daproto.MessageType {
@@ -271,4 +340,96 @@ func MapMsgType(msgType raftpb.MessageType) daproto.MessageType {
 	default:
 		return daproto.MessageType_LOG_ENTRY_COMMITTED
 	}
+}
+
+func mapInternalRequest(request *etcdserverpb.InternalRaftRequest) string {
+	if request.Range != nil {
+		return fmt.Sprintf("Get on Key '%s'", request.Range.Key)
+	}
+	if request.Put != nil {
+		return fmt.Sprintf("Put on Key '%s' and Value '%s'", request.Put.Key, request.Put.Value)
+	}
+	if request.DeleteRange != nil {
+		return fmt.Sprintf("Delete on Key '%s'", request.DeleteRange.Key)
+	}
+	if request.Txn != nil {
+		return "Txn"
+	}
+	if request.Compaction != nil {
+		return "Compact"
+	}
+	if request.LeaseGrant != nil {
+		return "LeaseGrant"
+	}
+	if request.LeaseRevoke != nil {
+		return "LeaseRevoke"
+	}
+	if request.Alarm != nil {
+		return "Alarm"
+	}
+	if request.LeaseCheckpoint != nil {
+		return "LeaseCheckpoint"
+	}
+	if request.AuthEnable != nil {
+		return "AuthEnable"
+	}
+	if request.AuthDisable != nil {
+		return "AuthDisable"
+	}
+	if request.AuthStatus != nil {
+		return "AuthStatus"
+	}
+	if request.Authenticate != nil {
+		return "Authenticate"
+	}
+	if request.AuthUserAdd != nil {
+		return "AuthUserAdd"
+	}
+	if request.AuthUserDelete != nil {
+		return "AuthUserDelete"
+	}
+	if request.AuthUserGet != nil {
+		return "AuthUserGet"
+	}
+	if request.AuthUserChangePassword != nil {
+		return "AuthUserChangePassword"
+	}
+	if request.AuthUserGrantRole != nil {
+		return "AuthUserGrantRole"
+	}
+	if request.AuthUserRevokeRole != nil {
+		return "AuthUserRevokeRole"
+	}
+	if request.AuthUserList != nil {
+		return "AuthUserList"
+	}
+	if request.AuthRoleList != nil {
+		return "AuthRoleList"
+	}
+	if request.AuthRoleAdd != nil {
+		return "AuthRoleAdd"
+	}
+	if request.AuthRoleDelete != nil {
+		return "AuthRoleDelete"
+	}
+	if request.AuthRoleGet != nil {
+		return "AuthRoleGet"
+	}
+	if request.AuthRoleGrantPermission != nil {
+		return "AuthRoleGrantPermission"
+	}
+	if request.AuthRoleRevokePermission != nil {
+		return "AuthRoleRevokePermission"
+	}
+	if request.ClusterVersionSet != nil {
+		return "ClusterVersionSet"
+	}
+	if request.ClusterMemberAttrSet != nil {
+		return "ClusterMemberAttrSet"
+	}
+	if request.DowngradeInfoSet != nil {
+		return "DowngradeInfoSet"
+	}
+
+	return "Unknown"
 }
