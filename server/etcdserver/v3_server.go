@@ -47,11 +47,11 @@ const (
 	// We should stop accepting new proposals if the gap growing to a certain point.
 	maxGapBetweenApplyAndCommitIndex = 5000
 	traceThreshold                   = 100 * time.Millisecond
-	readIndexRetryTime               = 500 * time.Millisecond
+	readIndexRetryTime               = 10000 * time.Millisecond
 
 	// The timeout for the node to catch up its applied index, and is used in
 	// lease related operations, such as LeaseRenew and LeaseTimeToLive.
-	applyTimeout = time.Second
+	applyTimeout = 10 * time.Second
 )
 
 type RaftKV interface {
