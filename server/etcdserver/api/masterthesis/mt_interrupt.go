@@ -272,7 +272,11 @@ func DaInterruptSendMsg(message *raftpb.Message) {
 				reqType = mapInternalRequest(&req)
 			}
 
-			entries = append(entries, fmt.Sprintf("(%s, Index: %d)", reqType, idx))
+			indexPart := ""
+			if idx != 0 {
+				indexPart = fmt.Sprintf(", Index: %d", idx)
+			}
+			entries = append(entries, fmt.Sprintf("(Type: %s%s)", reqType, indexPart))
 		}
 
 		logMsg += fmt.Sprintf(" with %d entries: %s", len(message.Entries), strings.Join(entries, ", "))
@@ -314,7 +318,11 @@ func DaInterruptReceiveMsg(message *raftpb.Message) {
 				reqType = mapInternalRequest(&req)
 			}
 
-			entries = append(entries, fmt.Sprintf("(%s, Index: %d)", reqType, idx))
+			indexPart := ""
+			if idx != 0 {
+				indexPart = fmt.Sprintf(", Index: %d", idx)
+			}
+			entries = append(entries, fmt.Sprintf("(Type: %s%s)", reqType, indexPart))
 		}
 
 		logMsg += fmt.Sprintf(" with %d entries: %s", len(message.Entries), strings.Join(entries, ", "))
