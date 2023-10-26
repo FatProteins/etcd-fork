@@ -1,12 +1,14 @@
 package masterthesis
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
 	"go.etcd.io/etcd/api/v3/etcdserverpb"
 	"go.etcd.io/etcd/pkg/v3/osutil"
 	"go.etcd.io/etcd/server/v3/daproto"
+	"go.etcd.io/raft/v3"
 	"go.etcd.io/raft/v3/raftpb"
 	"net"
 	"os"
@@ -19,7 +21,7 @@ import (
 const configPath = "/thesis/config/fault-config.yml"
 
 var DaLogger *Logger
-var sendConn *net.UnixConn
+var sendConn *net.TCPConn
 var jsonEncoder *json.Encoder
 var jsonDecoder *json.Decoder
 var recvConn *net.UnixConn
@@ -39,17 +41,17 @@ func init() {
 	}
 
 	DaLogger.Info("DETECTION ENABLED")
-	toDaSocketPath, exists := os.LookupEnv("TO_DA_CONTAINER_SOCKET_PATH")
-	if !exists {
-		panic("To-DA Socket path env variable is not defined")
-	}
+	//toDaSocketPath, exists := os.LookupEnv("TO_DA_CONTAINER_SOCKET_PATH")
+	//if !exists {
+	//	panic("To-DA Socket path env variable is not defined")
+	//}
 
 	//fromDaSocketPath, exists := os.LookupEnv("FROM_DA_CONTAINER_SOCKET_PATH")
 	//if !exists {
 	//	panic("From-DA Socket path env variable is not defined")
 	//}
 
-	toDaUnixAddr, err := net.ResolveUnixAddr("unix", toDaSocketPath)
+	toDaUnixAddr, err := net.ResolveTCPAddr("tcp", "da:8090")
 	if err != nil {
 		panic(fmt.Sprintf("Failed to resolve unix addr To-DA socket: '%s'", err.Error()))
 	}
@@ -61,7 +63,7 @@ func init() {
 
 	DaLogger.Info("Dialing DA unix domain socket on path '%s'", toDaUnixAddr.String())
 
-	sendConn, err = net.DialUnix("unix", nil, toDaUnixAddr)
+	sendConn, err = net.DialTCP("tcp", nil, toDaUnixAddr)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to dial DA unix socket: '%s'", err.Error()))
 	}
@@ -113,9 +115,11 @@ func init() {
 	//		DaLogger.Printf("Received message: ")
 	//	}
 	//}()
+	raft.StateChangeCallbacks.Store("DaLogState", DaLogState)
 }
 
 var DaInterruptLock = sync.RWMutex{}
+var DaSendLock = sync.Mutex{}
 var DaDataLock = sync.Mutex{}
 var lastIndex uint64 = 0
 var lastTerm uint64 = 0
@@ -233,7 +237,30 @@ func PickAction(message *raftpb.Message) {
 	}
 }
 
+func DaLogState(state string) {
+	DaLogger.Info("HERE WE GO LOG STATE")
+	defer DaLogger.Info("LOG STATE FINISHED KOEAFJKOIEAJHFEOAIFJIOUAE")
+
+	nodeState := daproto.NodeState_FOLLOWER
+	if state == "PRE_CANDIDATE" || state == "CANDIDATE" {
+		nodeState = daproto.NodeState_CANDIDATE
+	} else if state == "LEADER" {
+		nodeState = daproto.NodeState_LEADER
+	}
+
+	daMsg := daproto.Message{MessageType: daproto.MessageType_STATE_LOG, NodeState: nodeState}
+	DaSendLock.Lock()
+	err := jsonEncoder.Encode(&daMsg)
+	DaSendLock.Unlock()
+	if err != nil {
+		DaLogger.ErrorErr(err, "Failed to marshal msg of type '%s'", daMsg.MessageType)
+		return
+	}
+}
+
 func DaInterruptSendMsg(message *raftpb.Message) {
+	DaLogger.Info("Interrupt on Send msg")
+	defer DaLogger.Info("END Interrupt on Send msg")
 	DaInterruptLock.Lock()
 	defer DaInterruptLock.Unlock()
 
@@ -257,22 +284,32 @@ func DaInterruptSendMsg(message *raftpb.Message) {
 	}
 
 	logMsg += "."
-	daMsg := daproto.Message{MessageType: MapMsgType(message.Type), LogMessage: logMsg}
+	daMsg := daproto.Message{MessageType: daproto.MessageType_INTERRUPT, LogMessage: logMsg}
+	DaSendLock.Lock()
 	err := jsonEncoder.Encode(&daMsg)
+	DaSendLock.Unlock()
 	if err != nil {
 		DaLogger.ErrorErr(err, "Failed to marshal msg of type '%s'", daMsg.MessageType)
 		return
 	}
 
-	daResp := daproto.Message{}
-	err = jsonDecoder.Decode(&daResp)
+	DaLogger.Info("Waiting for response on send msg")
+
+	scanner := bufio.NewScanner(sendConn)
+	scanner.Scan()
+	err = scanner.Err()
 	if err != nil {
 		DaLogger.ErrorErr(err, "Failed to unmarshal response from DA")
 		return
 	}
+
+	receivedBytes := scanner.Bytes()
+	DaLogger.Info("Received response from DA '%s'", receivedBytes)
 }
 
 func DaInterruptReceiveMsg(message *raftpb.Message) {
+	DaLogger.Info("Interrupt on Receive msg")
+	defer DaLogger.Info("END Interrupt on Receive msg")
 	DaInterruptLock.Lock()
 	defer DaInterruptLock.Unlock()
 
@@ -296,50 +333,59 @@ func DaInterruptReceiveMsg(message *raftpb.Message) {
 	}
 
 	logMsg += "."
-	daMsg := daproto.Message{MessageType: MapMsgType(message.Type), LogMessage: logMsg}
+	daMsg := daproto.Message{MessageType: daproto.MessageType_INTERRUPT, LogMessage: logMsg}
+	DaSendLock.Lock()
 	err := jsonEncoder.Encode(&daMsg)
+	DaSendLock.Unlock()
 	if err != nil {
 		DaLogger.ErrorErr(err, "Failed to marshal msg of type '%s'", daMsg.MessageType)
 		return
 	}
 
-	daResp := daproto.Message{}
-	err = jsonDecoder.Decode(&daResp)
+	DaLogger.Info("Waiting for response on receive msg")
+
+	scanner := bufio.NewScanner(sendConn)
+	scanner.Scan()
+	err = scanner.Err()
 	if err != nil {
 		DaLogger.ErrorErr(err, "Failed to unmarshal response from DA")
 		return
 	}
+
+	receivedBytes := scanner.Bytes()
+	DaLogger.Info("Received response from DA '%s'", receivedBytes)
 }
 
 func DaInterruptApply(r *etcdserverpb.InternalRaftRequest) {
+	DaLogger.Info("Interrupt on Apply")
+	defer DaLogger.Info("END Interrupt on Apply")
 	DaInterruptLock.Lock()
 	defer DaInterruptLock.Unlock()
 
 	logMsg := fmt.Sprintf("Applying entry %s", mapInternalRequest(r))
 
 	logMsg += "."
-	daMsg := daproto.Message{LogMessage: logMsg}
+	daMsg := daproto.Message{MessageType: daproto.MessageType_INTERRUPT, LogMessage: logMsg}
+	DaSendLock.Lock()
 	err := jsonEncoder.Encode(&daMsg)
+	DaSendLock.Unlock()
 	if err != nil {
 		DaLogger.ErrorErr(err, "Failed to marshal msg of type '%s'", daMsg.MessageType)
 		return
 	}
 
-	daResp := daproto.Message{}
-	err = jsonDecoder.Decode(&daResp)
+	DaLogger.Info("Waiting for response on apply msg")
+
+	scanner := bufio.NewScanner(sendConn)
+	scanner.Scan()
+	err = scanner.Err()
 	if err != nil {
 		DaLogger.ErrorErr(err, "Failed to unmarshal response from DA")
 		return
 	}
-}
 
-func MapMsgType(msgType raftpb.MessageType) daproto.MessageType {
-	switch msgType {
-	case raftpb.MsgHeartbeat, raftpb.MsgHeartbeatResp:
-		return daproto.MessageType_HEARTBEAT
-	default:
-		return daproto.MessageType_LOG_ENTRY_COMMITTED
-	}
+	receivedBytes := scanner.Bytes()
+	DaLogger.Info("Received response from DA '%s'", receivedBytes)
 }
 
 func mapInternalRequest(request *etcdserverpb.InternalRaftRequest) string {

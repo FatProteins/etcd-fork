@@ -5,14 +5,8 @@ option go_package = "./daproto";
 import "google/protobuf/any.proto";
 
 enum MessageType {
-  DA_RESPONSE = 0;
-  HEARTBEAT = 1;
-  VOTE_REQUEST_RECEIVED = 2;
-  VOTE_RECEIVED = 3;
-  LOG_ENTRY_REPLICATED = 4;
-  LOG_ENTRY_COMMITTED = 5;
-  LEADER_SUSPECTED = 6;
-  FOLLOWER_SUSPECTED = 7;
+  INTERRUPT = 0;
+  STATE_LOG = 1;
 }
 
 enum ActionType {
@@ -25,12 +19,19 @@ enum ActionType {
   RESTART_ACTION_TYPE = 6;
 }
 
+enum NodeState {
+  FOLLOWER = 0;
+  CANDIDATE = 1;
+  LEADER = 2;
+}
+
 message Message {
   MessageType messageType = 1;
   ActionType actionType = 2;
   string logMessage = 3;
-  google.protobuf.Any messageObject = 4;
-  optional CustomData customData = 5;
+  NodeState nodeState = 4;
+  google.protobuf.Any messageObject = 5;
+  optional CustomData customData = 6;
 }
 
 message DAResponse {

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"go.etcd.io/etcd/server/v3/daproto"
 	"gonum.org/v1/gonum/floats"
-	"google.golang.org/protobuf/types/known/anypb"
 	"gopkg.in/yaml.v3"
 	"math/big"
 	"os"
@@ -168,14 +167,6 @@ func (action *NoopAction) Type() daproto.ActionType {
 }
 
 func (action *NoopAction) GenerateResponse(response *daproto.Message) error {
-	response.Reset()
-	response.MessageType = daproto.MessageType_DA_RESPONSE
-	response.MessageObject = &anypb.Any{}
-	err := response.MessageObject.MarshalFrom(response)
-	if err != nil {
-		return err
-	}
-
 	return nil
 }
 
@@ -192,14 +183,6 @@ type HaltAction struct {
 }
 
 func (action *HaltAction) GenerateResponse(response *daproto.Message) error {
-	response.Reset()
-	response.MessageType = daproto.MessageType_DA_RESPONSE
-	response.MessageObject = &anypb.Any{}
-	err := response.MessageObject.MarshalFrom(response)
-	if err != nil {
-		return err
-	}
-
 	return nil
 }
 
@@ -231,14 +214,6 @@ func (action *PauseAction) Type() daproto.ActionType {
 }
 
 func (action *PauseAction) GenerateResponse(response *daproto.Message) error {
-	response.Reset()
-	response.MessageType = daproto.MessageType_DA_RESPONSE
-	response.MessageObject = &anypb.Any{}
-	err := response.MessageObject.MarshalFrom(response)
-	if err != nil {
-		return err
-	}
-
 	return nil
 }
 
@@ -277,14 +252,6 @@ func (action *StopAction) Type() daproto.ActionType {
 }
 
 func (action *StopAction) GenerateResponse(response *daproto.Message) error {
-	response.Reset()
-	response.MessageType = daproto.MessageType_DA_RESPONSE
-	response.MessageObject = &anypb.Any{}
-	err := response.MessageObject.MarshalFrom(response)
-	if err != nil {
-		return err
-	}
-
 	return nil
 }
 
@@ -316,14 +283,6 @@ func (action *ResendLastMessageAction) Type() daproto.ActionType {
 }
 
 func (action *ResendLastMessageAction) GenerateResponse(response *daproto.Message) error {
-	response.Reset()
-	response.MessageType = daproto.MessageType_DA_RESPONSE
-	response.MessageObject = &anypb.Any{}
-	err := response.MessageObject.MarshalFrom(response)
-	if err != nil {
-		return err
-	}
-
 	return nil
 }
 
