@@ -238,9 +238,6 @@ func PickAction(message *raftpb.Message) {
 }
 
 func DaLogState(state string) {
-	DaLogger.Info("HERE WE GO LOG STATE")
-	defer DaLogger.Info("LOG STATE FINISHED KOEAFJKOIEAJHFEOAIFJIOUAE")
-
 	nodeState := daproto.NodeState_FOLLOWER
 	if state == "PRE_CANDIDATE" || state == "CANDIDATE" {
 		nodeState = daproto.NodeState_CANDIDATE
@@ -259,8 +256,6 @@ func DaLogState(state string) {
 }
 
 func DaInterruptSendMsg(message *raftpb.Message) {
-	DaLogger.Info("Interrupt on Send msg")
-	defer DaLogger.Info("END Interrupt on Send msg")
 	DaInterruptLock.Lock()
 	defer DaInterruptLock.Unlock()
 
@@ -293,8 +288,6 @@ func DaInterruptSendMsg(message *raftpb.Message) {
 		return
 	}
 
-	DaLogger.Info("Waiting for response on send msg")
-
 	scanner := bufio.NewScanner(sendConn)
 	scanner.Scan()
 	err = scanner.Err()
@@ -302,14 +295,9 @@ func DaInterruptSendMsg(message *raftpb.Message) {
 		DaLogger.ErrorErr(err, "Failed to unmarshal response from DA")
 		return
 	}
-
-	receivedBytes := scanner.Bytes()
-	DaLogger.Info("Received response from DA '%s'", receivedBytes)
 }
 
 func DaInterruptReceiveMsg(message *raftpb.Message) {
-	DaLogger.Info("Interrupt on Receive msg")
-	defer DaLogger.Info("END Interrupt on Receive msg")
 	DaInterruptLock.Lock()
 	defer DaInterruptLock.Unlock()
 
@@ -342,8 +330,6 @@ func DaInterruptReceiveMsg(message *raftpb.Message) {
 		return
 	}
 
-	DaLogger.Info("Waiting for response on receive msg")
-
 	scanner := bufio.NewScanner(sendConn)
 	scanner.Scan()
 	err = scanner.Err()
@@ -351,14 +337,9 @@ func DaInterruptReceiveMsg(message *raftpb.Message) {
 		DaLogger.ErrorErr(err, "Failed to unmarshal response from DA")
 		return
 	}
-
-	receivedBytes := scanner.Bytes()
-	DaLogger.Info("Received response from DA '%s'", receivedBytes)
 }
 
 func DaInterruptApply(r *etcdserverpb.InternalRaftRequest) {
-	DaLogger.Info("Interrupt on Apply")
-	defer DaLogger.Info("END Interrupt on Apply")
 	DaInterruptLock.Lock()
 	defer DaInterruptLock.Unlock()
 
@@ -374,8 +355,6 @@ func DaInterruptApply(r *etcdserverpb.InternalRaftRequest) {
 		return
 	}
 
-	DaLogger.Info("Waiting for response on apply msg")
-
 	scanner := bufio.NewScanner(sendConn)
 	scanner.Scan()
 	err = scanner.Err()
@@ -383,9 +362,6 @@ func DaInterruptApply(r *etcdserverpb.InternalRaftRequest) {
 		DaLogger.ErrorErr(err, "Failed to unmarshal response from DA")
 		return
 	}
-
-	receivedBytes := scanner.Bytes()
-	DaLogger.Info("Received response from DA '%s'", receivedBytes)
 }
 
 func mapInternalRequest(request *etcdserverpb.InternalRaftRequest) string {
