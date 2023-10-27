@@ -259,7 +259,7 @@ func DaInterruptSendMsg(message *raftpb.Message) {
 	DaInterruptLock.Lock()
 	defer DaInterruptLock.Unlock()
 
-	logMsg := fmt.Sprintf("Sending message of type %s to %x", message.Type.String(), message.To)
+	logMsg := fmt.Sprintf("📤 Sending message of type %s to %x", message.Type.String(), message.To)
 	if len(message.Entries) != 0 {
 		var entries []string
 		for _, entry := range message.Entries {
@@ -305,7 +305,7 @@ func DaInterruptReceiveMsg(message *raftpb.Message) {
 	DaInterruptLock.Lock()
 	defer DaInterruptLock.Unlock()
 
-	logMsg := fmt.Sprintf("Received message of type %s from %x", message.Type.String(), message.From)
+	logMsg := fmt.Sprintf("📩 ️Received message of type %s from %x", message.Type.String(), message.From)
 	if len(message.Entries) != 0 {
 		var entries []string
 		for _, entry := range message.Entries {
@@ -351,7 +351,7 @@ func DaInterruptApply(r *etcdserverpb.InternalRaftRequest) {
 	DaInterruptLock.Lock()
 	defer DaInterruptLock.Unlock()
 
-	logMsg := fmt.Sprintf("Applying entry %s", mapInternalRequest(r))
+	logMsg := fmt.Sprintf("⏬ Applying entry %s", mapInternalRequest(r))
 
 	logMsg += "."
 	daMsg := daproto.Message{MessageType: daproto.MessageType_INTERRUPT, LogMessage: logMsg}
