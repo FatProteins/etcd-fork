@@ -492,8 +492,8 @@ func NewConfig() *Config {
 			ReuseAddress: false,
 		},
 
-		TickMs:                     5000,
-		ElectionMs:                 25000,
+		TickMs:                     100,
+		ElectionMs:                 1000,
 		InitialElectionTickAdvance: true,
 
 		ListenPeerUrls:      []url.URL{*lpurl},

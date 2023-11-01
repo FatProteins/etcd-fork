@@ -178,7 +178,7 @@ func (t *Transport) Send(msgs []raftpb.Message) {
 	defer masterthesis.DaInterruptLock.RUnlock()
 	for _, m := range msgs {
 		//DaInterrupt(m)
-		masterthesis.PickAction(&m)
+		//masterthesis.PickAction(&m)
 		if m.To == 0 {
 			// ignore intentionally dropped message
 			continue
@@ -194,12 +194,30 @@ func (t *Transport) Send(msgs []raftpb.Message) {
 			if isMsgApp(m) {
 				t.ServerStats.SendAppendReq(m.Size())
 			}
+			//if txn.StragglerMode.Load() {
+			//	txn.StragglerChan <- txn.StragglerExec{
+			//		SendAt: time.Now().Add(90 * time.Millisecond),
+			//		F: func() {
+			//			p.send(m)
+			//		},
+			//	}
+			//} else {
 			p.send(m)
+			//}
 			continue
 		}
 
 		if rok {
+			//if txn.StragglerMode.Load() {
+			//	txn.StragglerChan <- txn.StragglerExec{
+			//		SendAt: time.Now().Add(90 * time.Millisecond),
+			//		F: func() {
+			//			g.send(m)
+			//		},
+			//	}
+			//} else {
 			g.send(m)
+			//}
 			continue
 		}
 

@@ -18,7 +18,13 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"go.etcd.io/etcd/server/v3/daproto"
+	"go.etcd.io/etcd/server/v3/etcdserver/api/masterthesis"
+	"go.etcd.io/raft/v3/raftpb"
+	"os"
 	"sort"
+	"sync/atomic"
+	"time"
 
 	"go.uber.org/zap"
 
@@ -31,7 +37,52 @@ import (
 	"go.etcd.io/etcd/server/v3/storage/mvcc"
 )
 
+var crashKey byte
+var StragglerEndTime = atomic.Value{}
+var StragglerMode = atomic.Bool{}
+var StragglerChan = make(chan StragglerExec, 1000000)
+
+type StragglerExec struct {
+	SendAt time.Time
+	F      func()
+}
+
+func init() {
+	crashString := os.Getenv("CRASH_KEY")
+	if len(crashString) != 1 {
+		panic("crash string should be of length 1")
+	}
+
+	crashKey = crashString[0]
+
+	//go func() {
+	//	for {
+	//		select {
+	//		case s := <-StragglerChan:
+	//			time.Sleep(s.SendAt.Sub(time.Now()))
+	//			s.F()
+	//		}
+	//	}
+	//}()
+}
+
 func Put(ctx context.Context, lg *zap.Logger, lessor lease.Lessor, kv mvcc.KV, txnWrite mvcc.TxnWrite, p *pb.PutRequest) (resp *pb.PutResponse, trace *traceutil.Trace, err error) {
+	if p.Key[0] == crashKey {
+		// Force crash
+		//if _, err := os.Stat("/var/run/already-crashed"); errors2.Is(err, os.ErrNotExist) {
+		//	masterthesis.DaLogger.Info("Forcing crash")
+		//	os.Create("/var/run/already-crashed")
+		//	masterthesis.DaInterrupt(&raftpb.Message{}, daproto.ActionType_STOP_ACTION_TYPE)
+		//} else {
+		//	masterthesis.DaLogger.Info("Already crashed once, not crashing again")
+		//}
+		if StragglerMode.CompareAndSwap(false, true) {
+			masterthesis.DaInterrupt(&raftpb.Message{}, daproto.ActionType_HALT_ACTION_TYPE)
+			time.AfterFunc(15*time.Second, func() {
+				masterthesis.DaInterrupt(&raftpb.Message{}, daproto.ActionType_UNHALT_ACTION_TYPE)
+			})
+		}
+	}
 	resp = &pb.PutResponse{}
 	resp.Header = &pb.ResponseHeader{}
 	trace = traceutil.Get(ctx)

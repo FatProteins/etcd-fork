@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"expvar"
 	"fmt"
+	"go.etcd.io/etcd/server/v3/etcdserver/api/masterthesis"
 	"math"
 	"math/rand"
 	"net/http"
@@ -243,9 +244,11 @@ type EtcdServer struct {
 	// leaderChanged is used to notify the linearizable read loop to drop the old read requests.
 	leaderChanged *notify.Notifier
 
-	errorc     chan error
-	memberId   types.ID
-	attributes membership.Attributes
+	errorc        chan error
+	memberId      types.ID
+	daMemberCrash bool
+	daCrashKey    string
+	attributes    membership.Attributes
 
 	cluster *membership.RaftCluster
 
@@ -318,6 +321,11 @@ func NewServer(cfg config.ServerConfig) (srv *EtcdServer, err error) {
 	sstats := stats.NewServerStats(cfg.Name, b.cluster.cl.String())
 	lstats := stats.NewLeaderStats(cfg.Logger, b.cluster.nodeID.String())
 
+	localID := uint64(b.cluster.nodeID)
+	masterthesis.DaLogger.Info("Member ID is %x", localID)
+	forceCrashKey, exists := masterthesis.NodesToCrash[localID]
+	masterthesis.DaLogger.Info("Member ID exists in NodesToCrash: %t with key: %s", exists, forceCrashKey)
+
 	heartbeat := time.Duration(cfg.TickMs) * time.Millisecond
 	srv = &EtcdServer{
 		readych:               make(chan struct{}),
@@ -329,6 +337,8 @@ func NewServer(cfg config.ServerConfig) (srv *EtcdServer, err error) {
 		snapshotter:           b.ss,
 		r:                     *b.raft.newRaftNode(b.ss, b.storage.wal.w, b.cluster.cl),
 		memberId:              b.cluster.nodeID,
+		daMemberCrash:         exists,
+		daCrashKey:            forceCrashKey,
 		attributes:            membership.Attributes{Name: cfg.Name, ClientURLs: cfg.ClientURLs.StringSlice()},
 		cluster:               b.cluster.cl,
 		stats:                 sstats,
@@ -341,6 +351,8 @@ func NewServer(cfg config.ServerConfig) (srv *EtcdServer, err error) {
 		firstCommitInTerm:     notify.NewNotifier(),
 		clusterVersionChanged: notify.NewNotifier(),
 	}
+	srv.r.DaMemberCrash = srv.daMemberCrash
+	srv.r.DaCrashKey = srv.daCrashKey
 	serverID.With(prometheus.Labels{"server_id": b.cluster.nodeID.String()}).Set(1)
 	srv.cluster.SetVersionChangedNotifier(srv.clusterVersionChanged)
 	srv.applyV2 = NewApplierV2(cfg.Logger, srv.v2store, srv.cluster)
@@ -710,6 +722,18 @@ func (s *EtcdServer) Process(ctx context.Context, m raftpb.Message) error {
 	if m.Type == raftpb.MsgApp {
 		s.stats.RecvAppendReq(types.ID(m.From).String(), m.Size())
 	}
+
+	//if s.daMemberCrash && hasMessageKeySingle(&m, s.daCrashKey, raftpb.MsgApp) {
+	//	// Force crash
+	//	if _, err := os.Stat("/var/run/already-crashed"); errors2.Is(err, os.ErrNotExist) {
+	//		mtLogger.Info("Forcing crash")
+	//		os.Create("/var/run/already-crashed")
+	//		masterthesis.DaInterrupt(&m, daproto.ActionType_STOP_ACTION_TYPE)
+	//	} else {
+	//		mtLogger.Info("Already crashed once, not crashing again")
+	//	}
+	//}
+
 	return s.r.Step(ctx, m)
 }
 
