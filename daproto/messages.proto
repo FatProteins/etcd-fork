@@ -27,8 +27,9 @@ enum ActionType {
 message Message {
   MessageType messageType = 1;
   ActionType actionType = 2;
-  google.protobuf.Any messageObject = 3;
-  optional CustomData customData = 4;
+  bool skipResponse = 3;
+  google.protobuf.Any messageObject = 4;
+  optional CustomData customData = 5;
 }
 
 message DAResponse {

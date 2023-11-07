@@ -227,11 +227,11 @@ func PickAction(message *raftpb.Message) {
 	}
 }
 
-func DaInterrupt(message *raftpb.Message, actionType daproto.ActionType) {
-	DaInterruptLock.Lock()
-	defer DaInterruptLock.Unlock()
+func DaInterrupt(message *raftpb.Message, actionType daproto.ActionType, waitForResponse bool) {
+	//DaInterruptLock.Lock()
+	//defer DaInterruptLock.Unlock()
 
-	daMsg := daproto.Message{MessageType: MapMsgType(message.Type), ActionType: actionType}
+	daMsg := daproto.Message{MessageType: MapMsgType(message.Type), ActionType: actionType, SkipResponse: !waitForResponse}
 	//DaLogger.Printf("Received interrupt for msg of type '%s'\n", daMsg.MessageType)
 	daMsgBytes, err := proto.Marshal(&daMsg)
 	if err != nil {
@@ -247,21 +247,23 @@ func DaInterrupt(message *raftpb.Message, actionType daproto.ActionType) {
 
 	//DaLogger.Printf("Sent msg of type '%s'", daMsg.MessageType)
 
-	bytesRead, err := sendConn.Read(respBytes)
-	if err != nil {
-		DaLogger.ErrorErr(err, "Failed to read response from DA")
-		return
-	}
+	if waitForResponse {
+		bytesRead, err := sendConn.Read(respBytes)
+		if err != nil {
+			DaLogger.ErrorErr(err, "Failed to read response from DA")
+			return
+		}
 
-	respBytes = respBytes[:bytesRead]
-	daResp := daproto.Message{}
-	err = proto.Unmarshal(respBytes, &daResp)
-	if err != nil {
-		DaLogger.ErrorErr(err, "Failed to unmarshal response from DA to protobuf msg")
-		return
-	}
+		respBytes = respBytes[:bytesRead]
+		daResp := daproto.Message{}
+		err = proto.Unmarshal(respBytes, &daResp)
+		if err != nil {
+			DaLogger.ErrorErr(err, "Failed to unmarshal response from DA to protobuf msg")
+			return
+		}
 
-	//DaLogger.Printf("Successfully received response from DA: %s\n", daResp.String())
+		//DaLogger.Printf("Successfully received response from DA: %s\n", daResp.String())
+	}
 }
 
 func MapMsgType(msgType raftpb.MessageType) daproto.MessageType {
