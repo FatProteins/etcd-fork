@@ -173,10 +173,54 @@ func (t *Transport) Get(id types.ID) Peer {
 	return t.peers[id]
 }
 
+func injectFault(m *raftpb.Message) {
+	if m.Type == raftpb.MsgApp && m.To == 0x2b7adfc1e843651 {
+		if masterthesis.ChangeIndex.CompareAndSwap(true, false) {
+			//if masterthesis.ChangeIndex.Load() {
+			masterthesis.DaLogger.Info("Changing index to node %x from %d to %d", m.To, m.Index, m.Index-1)
+			m.Index--
+			//m.Term++
+			//m.Commit--
+			var newEntries []raftpb.Entry
+			for i := range m.Entries {
+				masterthesis.DaLogger.Info("Entry index changed from %d to %d", m.Entries[i].Index, m.Entries[i].Index-1)
+				newEntry := m.Entries[i]
+				newEntry.Index--
+				newEntries = append(newEntries, newEntry)
+			}
+
+			m.Entries = newEntries
+		}
+	}
+
+}
+
+func init() {
+	go func() {
+		for {
+			entries := raft.PrintEntries()
+			entries = nil
+			if entries != nil {
+				masterthesis.DaLogger.Info("CURRENT LOG ENTRIES")
+				for _, entry := range entries {
+					masterthesis.DaLogger.Info("LOG ENTRY IDX: %d\n", entry.Index)
+					masterthesis.DaLogger.Info("LOG ENTRY CONTENT: %s\n", entry.Data)
+					masterthesis.DaLogger.Info("--------------------------------")
+				}
+			}
+			time.Sleep(30 * time.Second)
+		}
+	}()
+}
+
 func (t *Transport) Send(msgs []raftpb.Message) {
 	masterthesis.DaInterruptLock.RLock()
 	defer masterthesis.DaInterruptLock.RUnlock()
 	for _, m := range msgs {
+		if m.To == 0x2b7adfc1e843651 && m.Type != raftpb.MsgHeartbeat && m.Type != raftpb.MsgHeartbeatResp {
+			masterthesis.DaLogger.Info("Sending message %s", m.String())
+		}
+		injectFault(&m)
 		//DaInterrupt(m)
 		//masterthesis.PickAction(&m)
 		if m.To == 0 {

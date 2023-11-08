@@ -17,11 +17,8 @@ package txn
 import (
 	"bytes"
 	"context"
-	errors2 "errors"
 	"fmt"
-	"go.etcd.io/etcd/server/v3/daproto"
 	"go.etcd.io/etcd/server/v3/etcdserver/api/masterthesis"
-	"go.etcd.io/raft/v3/raftpb"
 	"os"
 	"sort"
 	"sync/atomic"
@@ -70,17 +67,20 @@ func init() {
 func Put(ctx context.Context, lg *zap.Logger, lessor lease.Lessor, kv mvcc.KV, txnWrite mvcc.TxnWrite, p *pb.PutRequest) (resp *pb.PutResponse, trace *traceutil.Trace, err error) {
 	if p.Key[0] == crashKey {
 		// Force crash
-		if _, err := os.Stat("/var/run/already-crashed"); errors2.Is(err, os.ErrNotExist) {
-			masterthesis.DaLogger.Info("Forcing crash")
-			os.Create("/var/run/already-crashed")
-			masterthesis.DaInterrupt(&raftpb.Message{}, daproto.ActionType_STOP_ACTION_TYPE, false)
-		}
+		//if _, err := os.Stat("/var/run/already-crashed"); errors2.Is(err, os.ErrNotExist) {
+		//	masterthesis.DaLogger.Info("Forcing crash")
+		//	os.Create("/var/run/already-crashed")
+		//	masterthesis.DaInterrupt(&raftpb.Message{}, daproto.ActionType_STOP_ACTION_TYPE, false)
+		//}
 		//if StragglerMode.CompareAndSwap(false, true) {
 		//	masterthesis.DaInterrupt(&raftpb.Message{}, daproto.ActionType_HALT_ACTION_TYPE, false)
 		//	time.AfterFunc(15*time.Second, func() {
 		//		masterthesis.DaInterrupt(&raftpb.Message{}, daproto.ActionType_UNHALT_ACTION_TYPE, false)
 		//	})
 		//}
+		//raft.IncreaseTerm = true
+		masterthesis.DaLogger.Info("Initiating fault")
+		masterthesis.ChangeIndex.Store(true)
 	}
 	//masterthesis.DaInterrupt(&raftpb.Message{}, daproto.ActionType_NOOP_ACTION_TYPE, false)
 

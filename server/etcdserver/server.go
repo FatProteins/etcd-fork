@@ -710,6 +710,16 @@ func (h *downgradeEnabledHandler) ServeHTTP(w http.ResponseWriter, r *http.Reque
 // Process takes a raft message and applies it to the server's raft state
 // machine, respecting any timeout of the given context.
 func (s *EtcdServer) Process(ctx context.Context, m raftpb.Message) error {
+	//if m.Type == raftpb.MsgApp || m.Type == raftpb.MsgAppResp {
+	if m.From == 0x2b7adfc1e843651 && m.Type != raftpb.MsgHeartbeat && m.Type != raftpb.MsgHeartbeatResp {
+		indices := ""
+		for _, entry := range m.Entries {
+			indices += strconv.FormatUint(entry.Index, 10) + " "
+			masterthesis.DaLogger.Info("content received: %s\n", entry.Data)
+		}
+		//masterthesis.DaLogger.Info("Received message from %x to %x with index %d and log entries indices %s", m.From, m.To, m.Index, indices)
+		masterthesis.DaLogger.Info("Message: %s", m.String())
+	}
 	lg := s.Logger()
 	if s.cluster.IsIDRemoved(types.ID(m.From)) {
 		lg.Warn(
