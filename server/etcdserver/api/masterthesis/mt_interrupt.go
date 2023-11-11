@@ -3,6 +3,7 @@ package masterthesis
 import (
 	"context"
 	"fmt"
+	"github.com/matttproud/golang_protobuf_extensions/pbutil"
 	"go.etcd.io/etcd/api/v3/etcdserverpb"
 	"go.etcd.io/etcd/pkg/v3/osutil"
 	"go.etcd.io/etcd/server/v3/daproto"
@@ -233,13 +234,14 @@ func DaInterrupt(message *raftpb.Message, actionType daproto.ActionType, waitFor
 
 	daMsg := daproto.Message{MessageType: MapMsgType(message.Type), ActionType: actionType, SkipResponse: !waitForResponse}
 	//DaLogger.Printf("Received interrupt for msg of type '%s'\n", daMsg.MessageType)
-	daMsgBytes, err := proto.Marshal(&daMsg)
-	if err != nil {
-		DaLogger.ErrorErr(err, "Failed to marshal msg of type '%s'", daMsg.MessageType)
-		return
-	}
+	//daMsgBytes, err := proto.Marshal(&daMsg)
+	//if err != nil {
+	//	DaLogger.ErrorErr(err, "Failed to marshal msg of type '%s'", daMsg.MessageType)
+	//	return
+	//}
 
-	_, err = sendConn.Write(daMsgBytes)
+	_, err := pbutil.WriteDelimited(sendConn, &daMsg)
+	//_, err = sendConn.Write(daMsgBytes)
 	if err != nil {
 		DaLogger.ErrorErr(err, "Failed to write msg to DA socket")
 		return

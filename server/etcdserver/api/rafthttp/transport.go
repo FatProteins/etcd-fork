@@ -195,32 +195,32 @@ func injectFault(m *raftpb.Message) {
 
 }
 
-func init() {
-	go func() {
-		for {
-			entries := raft.PrintEntries()
-			entries = nil
-			if entries != nil {
-				masterthesis.DaLogger.Info("CURRENT LOG ENTRIES")
-				for _, entry := range entries {
-					masterthesis.DaLogger.Info("LOG ENTRY IDX: %d\n", entry.Index)
-					masterthesis.DaLogger.Info("LOG ENTRY CONTENT: %s\n", entry.Data)
-					masterthesis.DaLogger.Info("--------------------------------")
-				}
-			}
-			time.Sleep(30 * time.Second)
-		}
-	}()
-}
+//func init() {
+//	go func() {
+//		for {
+//			entries := raft.PrintEntries()
+//			entries = nil
+//			if entries != nil {
+//				masterthesis.DaLogger.Info("CURRENT LOG ENTRIES")
+//				for _, entry := range entries {
+//					masterthesis.DaLogger.Info("LOG ENTRY IDX: %d\n", entry.Index)
+//					masterthesis.DaLogger.Info("LOG ENTRY CONTENT: %s\n", entry.Data)
+//					masterthesis.DaLogger.Info("--------------------------------")
+//				}
+//			}
+//			time.Sleep(30 * time.Second)
+//		}
+//	}()
+//}
 
 func (t *Transport) Send(msgs []raftpb.Message) {
-	masterthesis.DaInterruptLock.RLock()
-	defer masterthesis.DaInterruptLock.RUnlock()
+	//masterthesis.DaInterruptLock.RLock()
+	//defer masterthesis.DaInterruptLock.RUnlock()
 	for _, m := range msgs {
-		if m.To == 0x2b7adfc1e843651 && m.Type != raftpb.MsgHeartbeat && m.Type != raftpb.MsgHeartbeatResp {
-			masterthesis.DaLogger.Info("Sending message %s", m.String())
-		}
-		injectFault(&m)
+		//if m.To == 0x2b7adfc1e843651 && m.Type != raftpb.MsgHeartbeat && m.Type != raftpb.MsgHeartbeatResp {
+		//	masterthesis.DaLogger.Info("Sending message %s", m.String())
+		//}
+		//injectFault(&m)
 		//DaInterrupt(m)
 		//masterthesis.PickAction(&m)
 		if m.To == 0 {
